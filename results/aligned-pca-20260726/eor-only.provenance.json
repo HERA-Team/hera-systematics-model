@@ -1,0 +1,149 @@
+{
+  "input": "/lustre/aoc/projects/hera/Validation/H6C_IDR2/lstbin-outputs/eor-only/single_baseline_files/baselines_merged.pspec.h5",
+  "input_mtime": 1743677403.0,
+  "input_size": 46726812142,
+  "group": "stokespol",
+  "spectrum": "interleave_averaged",
+  "polpair": "pI",
+  "window_sec": 270.59161216020584,
+  "max_centroid_spread_sec": 251.26365423202515,
+  "bl_error_tol": 1.0,
+  "n_blpairs": 789,
+  "n_dropped_dead": 0,
+  "n_dropped_duplicate_window_rows": 32,
+  "n_zero_weight_cells": 36450,
+  "weights": "1/P_N^2",
+  "n_common_times": 61,
+  "n_groups": 126,
+  "spws": [
+    {
+      "spw": 0,
+      "file": "eor-only.aligned.spw00.npz",
+      "shape": [
+        61,
+        126,
+        49
+      ]
+    },
+    {
+      "spw": 1,
+      "file": "eor-only.aligned.spw01.npz",
+      "shape": [
+        61,
+        126,
+        41
+      ]
+    },
+    {
+      "spw": 2,
+      "file": "eor-only.aligned.spw02.npz",
+      "shape": [
+        61,
+        126,
+        44
+      ]
+    },
+    {
+      "spw": 3,
+      "file": "eor-only.aligned.spw03.npz",
+      "shape": [
+        61,
+        126,
+        32
+      ]
+    },
+    {
+      "spw": 4,
+      "file": "eor-only.aligned.spw04.npz",
+      "shape": [
+        61,
+        126,
+        28
+      ]
+    },
+    {
+      "spw": 5,
+      "file": "eor-only.aligned.spw05.npz",
+      "shape": [
+        61,
+        126,
+        44
+      ]
+    },
+    {
+      "spw": 6,
+      "file": "eor-only.aligned.spw06.npz",
+      "shape": [
+        61,
+        126,
+        40
+      ]
+    },
+    {
+      "spw": 7,
+      "file": "eor-only.aligned.spw07.npz",
+      "shape": [
+        61,
+        126,
+        36
+      ]
+    },
+    {
+      "spw": 8,
+      "file": "eor-only.aligned.spw08.npz",
+      "shape": [
+        61,
+        126,
+        43
+      ]
+    },
+    {
+      "spw": 9,
+      "file": "eor-only.aligned.spw09.npz",
+      "shape": [
+        61,
+        126,
+        37
+      ]
+    },
+    {
+      "spw": 10,
+      "file": "eor-only.aligned.spw10.npz",
+      "shape": [
+        61,
+        126,
+        61
+      ]
+    },
+    {
+      "spw": 11,
+      "file": "eor-only.aligned.spw11.npz",
+      "shape": [
+        61,
+        126,
+        40
+      ]
+    },
+    {
+      "spw": 12,
+      "file": "eor-only.aligned.spw12.npz",
+      "shape": [
+        61,
+        126,
+        33
+      ]
+    },
+    {
+      "spw": 13,
+      "file": "eor-only.aligned.spw13.npz",
+      "shape": [
+        61,
+        126,
+        27
+      ]
+    }
+  ],
+  "hera_pspec_version": "0.4.3.dev89+ge63e2a188",
+  "command": "/lustre/aoc/projects/hera/kmandar/systematics-model/scripts/build_aligned_samples.py /lustre/aoc/projects/hera/Validation/H6C_IDR2/lstbin-outputs/eor-only/single_baseline_files/baselines_merged.pspec.h5 --outdir /lustre/aoc/projects/hera/kmandar/systematics-model/aligned-samples/eor-only --label eor-only",
+  "runtime_sec": 19.28529930114746
+}

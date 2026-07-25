@@ -1,0 +1,215 @@
+{
+  "label": "sum_minus_eor-only",
+  "spws": [
+    {
+      "spw": 0,
+      "file": "sum_minus_eor-only.pca.spw00.npz",
+      "n_samples": 61,
+      "n_features": 6174,
+      "n_components_for_threshold": 4,
+      "top5_evr": [
+        0.9323621567553821,
+        0.033910590407630385,
+        0.015127930222758733,
+        0.00895480098140565,
+        0.004398874265318301
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 1,
+      "file": "sum_minus_eor-only.pca.spw01.npz",
+      "n_samples": 61,
+      "n_features": 5166,
+      "n_components_for_threshold": 4,
+      "top5_evr": [
+        0.9667984362444811,
+        0.010411093437529136,
+        0.008802020770366976,
+        0.005180900758670693,
+        0.0043926144544306515
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 2,
+      "file": "sum_minus_eor-only.pca.spw02.npz",
+      "n_samples": 61,
+      "n_features": 5544,
+      "n_components_for_threshold": 3,
+      "top5_evr": [
+        0.9651348769664896,
+        0.02180392872726755,
+        0.005161755762266539,
+        0.0043294441484016824,
+        0.002180194621904147
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 3,
+      "file": "sum_minus_eor-only.pca.spw03.npz",
+      "n_samples": 61,
+      "n_features": 4032,
+      "n_components_for_threshold": 2,
+      "top5_evr": [
+        0.9789960253466675,
+        0.011643271838748631,
+        0.006140446637782475,
+        0.001052431121314494,
+        0.0008743207202959708
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 4,
+      "file": "sum_minus_eor-only.pca.spw04.npz",
+      "n_samples": 61,
+      "n_features": 3528,
+      "n_components_for_threshold": 3,
+      "top5_evr": [
+        0.9736911309738759,
+        0.01433156315059583,
+        0.007281996609987426,
+        0.001715417509187051,
+        0.000951085972751767
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 5,
+      "file": "sum_minus_eor-only.pca.spw05.npz",
+      "n_samples": 61,
+      "n_features": 5544,
+      "n_components_for_threshold": 3,
+      "top5_evr": [
+        0.9708433625475661,
+        0.015296992563342158,
+        0.007933512270930776,
+        0.0021297826295885937,
+        0.0012057761945232907
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 6,
+      "file": "sum_minus_eor-only.pca.spw06.npz",
+      "n_samples": 61,
+      "n_features": 5040,
+      "n_components_for_threshold": 4,
+      "top5_evr": [
+        0.9610681654070169,
+        0.019589857361116472,
+        0.008750637887347321,
+        0.004074932609236443,
+        0.0019275182671988128
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 7,
+      "file": "sum_minus_eor-only.pca.spw07.npz",
+      "n_samples": 61,
+      "n_features": 4536,
+      "n_components_for_threshold": 5,
+      "top5_evr": [
+        0.9406214776768891,
+        0.029531950127234457,
+        0.010769397551890157,
+        0.007792030137024146,
+        0.003644376693926531
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 8,
+      "file": "sum_minus_eor-only.pca.spw08.npz",
+      "n_samples": 61,
+      "n_features": 5418,
+      "n_components_for_threshold": 6,
+      "top5_evr": [
+        0.9307998531582004,
+        0.036379851349723054,
+        0.01008702895136029,
+        0.008249743479841138,
+        0.004180221129370262
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 9,
+      "file": "sum_minus_eor-only.pca.spw09.npz",
+      "n_samples": 61,
+      "n_features": 4662,
+      "n_components_for_threshold": 8,
+      "top5_evr": [
+        0.8752297150385737,
+        0.06615711184260754,
+        0.018681737291702624,
+        0.012045736014828886,
+        0.008979704053967832
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 10,
+      "file": "sum_minus_eor-only.pca.spw10.npz",
+      "n_samples": 61,
+      "n_features": 7686,
+      "n_components_for_threshold": 9,
+      "top5_evr": [
+        0.8128425456222391,
+        0.09927643157697291,
+        0.035726786776838104,
+        0.015085772133074752,
+        0.009550231922010842
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 11,
+      "file": "sum_minus_eor-only.pca.spw11.npz",
+      "n_samples": 61,
+      "n_features": 5040,
+      "n_components_for_threshold": 12,
+      "top5_evr": [
+        0.730528368385938,
+        0.14089561235871245,
+        0.04695926851790606,
+        0.029687077790870965,
+        0.013572753441368619
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 12,
+      "file": "sum_minus_eor-only.pca.spw12.npz",
+      "n_samples": 61,
+      "n_features": 4158,
+      "n_components_for_threshold": 14,
+      "top5_evr": [
+        0.7162279256263498,
+        0.11161371196479274,
+        0.05325612335014494,
+        0.036149976621333235,
+        0.01556960855741831
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    },
+    {
+      "spw": 13,
+      "file": "sum_minus_eor-only.pca.spw13.npz",
+      "n_samples": 61,
+      "n_features": 3402,
+      "n_components_for_threshold": 15,
+      "top5_evr": [
+        0.7361749522119464,
+        0.0909726598993773,
+        0.046050622864302136,
+        0.03842913589240658,
+        0.023786811145768857
+      ],
+      "note": "contrast sum-eor-only; 61 matched times; NOT the proper ideal residual"
+    }
+  ]
+}
