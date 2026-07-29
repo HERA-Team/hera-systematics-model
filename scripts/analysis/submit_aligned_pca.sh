@@ -40,6 +40,9 @@ SUM_PSPEC=$W/lstbin-outputs/redavg-smoothcal-inpaint-500ns-lstcal/inpaint/single
 EOR_PSPEC=$W/lstbin-outputs/eor-only/single_baseline_files/baselines_merged.pspec.h5
 
 QUORUM=${QUORUM:-0.95}
+# SKIP_BUILD=1 reuses existing aligned samples and submits only the analysis
+# job, for iterating on PCA/validation settings without rebuilding.
+SKIP_BUILD=${SKIP_BUILD:-0}
 # One PCA per threshold. Delay bins begin at 94 ns and step by about the same,
 # so 200 removes only the brightest bin while 300 removes the brightest three.
 # Running both shows whether the basis changes gradually as bins are removed or
@@ -87,8 +90,15 @@ $PY $SCRIPTS/build_aligned_samples.py $pspec \
   --outdir $OUT/$label --label $label --quorum $QUORUM"
 }
 
-JOB_SUM=$(submit_build sum "$SUM_PSPEC")
-JOB_EOR=$(submit_build eor-only "$EOR_PSPEC")
+if [ "$SKIP_BUILD" = 1 ]; then
+  JOB_SUM=skipped
+  JOB_EOR=skipped
+  DEP_ARGS=()
+else
+  JOB_SUM=$(submit_build sum "$SUM_PSPEC")
+  JOB_EOR=$(submit_build eor-only "$EOR_PSPEC")
+  DEP_ARGS=("--dependency=afterok:${JOB_SUM}:${JOB_EOR}")
+fi
 
 # ---- analysis: every mask for both branches, then validation and contrast ----
 steps="set -e
@@ -112,6 +122,19 @@ $PY $SCRIPTS/run_pca_aligned.py \
   --mask $mask $extra --wedge-buffer-ns $WEDGE_BUFFER_NS \
   --outdir $PCA/$sub"
   done
+  # Noise-whitened variants. Redundant-group noise spans orders of magnitude
+  # across baseline lengths, so the unwhitened runs assign leading components
+  # to the noisiest groups; the whitened runs measure structure relative to
+  # noise instead.
+  for wv in "none:whitened" "above-wedge:whitened-above-wedge"; do
+    mask=${wv%%:*}
+    sub=${wv##*:}
+    steps="$steps
+$PY $SCRIPTS/run_pca_aligned.py \
+  --samples-dir $OUT/$label --label $label \
+  --mask $mask --whiten pn-median --wedge-buffer-ns $WEDGE_BUFFER_NS \
+  --outdir $PCA/$sub"
+  done
   # Held-out comparison of the residual representations. Without a matched
   # ideal branch this uses the training mean as the reference, which is a
   # stand-in: the numbers rank the representations against each other, they do
@@ -132,7 +155,7 @@ $PY $SCRIPTS/run_pca_aligned.py \
 JOB_ANALYSIS=$(sbatch --parsable \
   --job-name=align-analysis \
   --partition=batch \
-  --dependency=afterok:${JOB_SUM}:${JOB_EOR} \
+  ${DEP_ARGS[@]+"${DEP_ARGS[@]}"} \
   --mem="$ANALYSIS_MEM" --cpus-per-task="$ANALYSIS_CPUS" --time="$ANALYSIS_TIME" \
   --output="$LOGS/align-analysis-%j.out" \
   --wrap="$steps")

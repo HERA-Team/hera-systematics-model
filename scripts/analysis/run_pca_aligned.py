@@ -51,6 +51,14 @@ def parse_args():
                         "full grid, zero outside the mask")
     p.add_argument("--min-delay-ns", type=float, default=300.0)
     p.add_argument("--wedge-buffer-ns", type=float, default=500.0)
+    p.add_argument("--whiten", choices=("none", "pn-median"), default="none",
+                   help="divide each feature by its median effective noise "
+                        "before the SVD. Redundant-group noise spans orders of "
+                        "magnitude across baseline lengths, so an unwhitened "
+                        "PCA assigns components to the noisiest groups rather "
+                        "than to shared structure. Components are stored in "
+                        "whitened space (orthonormal there); the applied scale "
+                        "is saved as feature_scale for mapping back to power")
     return p.parse_args()
 
 
@@ -161,10 +169,37 @@ def main():
                   f"(z={coords['redshift']:.2f})", flush=True)
             feature_mask &= geom.ravel()
 
+        # Per-feature noise whitening. The scale is the median effective noise
+        # of each feature over rows; features with no usable noise estimate
+        # cannot be whitened and are dropped.
+        feature_scale = None
+        if args.whiten == "pn-median":
+            if "pn_eff" not in z.files:
+                raise SystemExit(f"spw {spw}: --whiten needs pn_eff in the "
+                                 f"sample files; rebuild the samples first")
+            pn = z["pn_eff"]
+            if contrast:
+                if "pn_eff" not in z2.files:
+                    raise SystemExit(f"spw {spw}: --whiten in contrast mode "
+                                     f"needs pn_eff in both branches")
+                # noise of a difference: quadrature of the two branches
+                pn = np.sqrt(pn[i1] ** 2 + z2["pn_eff"][i2] ** 2)
+            good_pn = np.isfinite(pn) & (pn > 0)
+            with np.errstate(invalid="ignore"):
+                feature_scale = np.nanmedian(np.where(good_pn, pn, np.nan),
+                                             axis=0)
+            ok_scale = np.isfinite(feature_scale) & (feature_scale > 0)
+            if not ok_scale.all():
+                print(f"spw {spw}: dropping {int((~ok_scale).sum())} features "
+                      f"with no usable noise estimate", flush=True)
+            feature_mask &= ok_scale
+
         if not feature_mask.any():
             raise AssertionError(f"spw {spw}: no features survive the masks")
         if not feature_mask.all():
             X = X[:, feature_mask]
+        if feature_scale is not None:
+            X = X / feature_scale[feature_mask]
 
         mean = X.mean(axis=0)
         Xc = X - mean
@@ -198,13 +233,16 @@ def main():
             time_grid=time_grid, lst_grid=lst_grid,
             cube_shape=z["cube_shape"], blp_lens=z["blp_lens"],
             dlys=z["dlys"], kperps=z["kperps"], kparas=z["kparas"],
-            **({"valid": valid} if valid is not None else {}))
+            **({"valid": valid} if valid is not None else {}),
+            **({"feature_scale": np.where(feature_mask, feature_scale, np.nan)}
+               if feature_scale is not None else {}))
         summary.append({
             "spw": spw, "file": os.path.basename(out_fn),
             "n_samples": int(X.shape[0]), "n_features": int(X.shape[1]),
             "n_features_total": int(n_full),
             "missing_policy": args.missing,
             "mask": args.mask,
+            "whiten": args.whiten,
             "invalid_cell_fraction": invalid_frac,
             "n_components_for_threshold": n99,
             "top5_evr": [float(v) for v in evr[:5]],
