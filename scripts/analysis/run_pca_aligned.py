@@ -33,6 +33,13 @@ def parse_args():
     p.add_argument("--subtract-label", default="")
     p.add_argument("--time-tol-sec", type=float, default=60.0)
     p.add_argument("--variance-threshold", type=float, default=0.99)
+    p.add_argument("--missing", choices=("zero", "drop-features"), default="zero",
+                   help="how to treat cells with no contributing baseline. "
+                        "'zero' keeps the historical behaviour (they enter the "
+                        "PCA as exact zeros, which asserts zero power rather "
+                        "than absence); 'drop-features' excludes any feature "
+                        "invalid in some row and scatters the components back "
+                        "into the full grid afterwards")
     return p.parse_args()
 
 
@@ -103,6 +110,27 @@ def main():
             print(f"spw {spw}: WARNING {nonfinite.sum()} non-finite cells "
                   f"set to 0 before PCA", flush=True)
             X = np.where(nonfinite, 0.0, X)
+
+        # validity mask, when the sample builder recorded one. In contrast mode
+        # a cell is usable only if both branches measured it.
+        valid = z["valid"] if "valid" in z.files else None
+        if contrast and valid is not None and "valid" in z2.files:
+            valid = valid[i1] & z2["valid"][i2]
+        elif contrast and valid is not None:
+            valid = valid[i1]
+        invalid_frac = float(1.0 - valid.mean()) if valid is not None else None
+
+        n_full = X.shape[1]
+        feature_mask = np.ones(n_full, dtype=bool)
+        if args.missing == "drop-features" and valid is not None:
+            feature_mask = valid.all(axis=0)
+            if not feature_mask.any():
+                raise AssertionError(
+                    f"spw {spw}: every feature is invalid in some row")
+            X = X[:, feature_mask]
+            print(f"spw {spw}: dropped {n_full - int(feature_mask.sum())} of "
+                  f"{n_full} features invalid in at least one row", flush=True)
+
         mean = X.mean(axis=0)
         Xc = X - mean
         # economy SVD; rank <= Ntimes - 1
@@ -114,26 +142,43 @@ def main():
         ntop = min(TOP_COMPONENTS, len(S))
         scores = U[:, :ntop] * S[:ntop]
 
+        # scatter back onto the full feature axis so that cube_shape and the
+        # coordinate arrays keep describing the stored mean and components
+        if feature_mask.all():
+            mean_full, comps_full = mean, Vt[:ntop]
+        else:
+            mean_full = np.zeros(n_full)
+            mean_full[feature_mask] = mean
+            comps_full = np.zeros((ntop, n_full))
+            comps_full[:, feature_mask] = Vt[:ntop]
+
         out_fn = os.path.join(args.outdir, f"{out_label}.pca.spw{spw:02d}.npz")
         np.savez_compressed(
             out_fn,
-            mean=mean, components=Vt[:ntop], singular_values=S,
+            mean=mean_full, components=comps_full, singular_values=S,
             explained_variance_ratio=evr, scores=scores,
             n_for_threshold=np.array([n99]),
             variance_threshold=np.array([args.variance_threshold]),
+            feature_mask=feature_mask,
             time_grid=time_grid, lst_grid=lst_grid,
             cube_shape=z["cube_shape"], blp_lens=z["blp_lens"],
-            dlys=z["dlys"], kperps=z["kperps"], kparas=z["kparas"])
+            dlys=z["dlys"], kperps=z["kperps"], kparas=z["kparas"],
+            **({"valid": valid} if valid is not None else {}))
         summary.append({
             "spw": spw, "file": os.path.basename(out_fn),
             "n_samples": int(X.shape[0]), "n_features": int(X.shape[1]),
+            "n_features_total": int(n_full),
+            "missing_policy": args.missing,
+            "invalid_cell_fraction": invalid_frac,
             "n_components_for_threshold": n99,
             "top5_evr": [float(v) for v in evr[:5]],
             "note": note,
         })
         print(f"spw {spw:2d}: {X.shape[0]} x {X.shape[1]}  "
               f"{n99} comps for {args.variance_threshold:.0%}  "
-              f"top5 evr {np.round(evr[:5], 4)}", flush=True)
+              f"top5 evr {np.round(evr[:5], 4)}"
+              + ("" if invalid_frac is None else f"  invalid={invalid_frac:.4f}"),
+              flush=True)
 
     with open(os.path.join(args.outdir, f"{out_label}.pca_summary.json"), "w") as fh:
         json.dump({"label": out_label, "spws": summary}, fh, indent=2)

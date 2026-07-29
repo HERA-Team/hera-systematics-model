@@ -12,18 +12,21 @@ cannot work; instead each centroid is assigned to its window index
 floor((t - anchor)/window), where the window length is inferred from
 per-baseline time differences (or forced with --window-sec). Rows that share a
 window within one baseline-pair (centroids straddling a window edge) are
-discarded; a sample row is retained only when every baseline-pair has exactly
-one measurement in that window.
+discarded; a window becomes a sample row when at least --quorum of the
+baseline-pairs measure it. Requiring all of them (--quorum 1.0) lets a single
+flagged baseline discard the window for every baseline, which costs most of the
+time axis; baseline-pairs missing from a retained window simply contribute no
+weight to it.
 
 Pipeline per run (one merged PSpecContainer, e.g. baselines_merged.pspec.h5):
   1. load UVPSpec (group/spectrum selectable)
   2. drop all-zero baseline-pairs
-  3. build the common time grid across all baseline-pairs (hard assertion)
+  3. build the shared time grid across baseline-pairs (quorum + assertions)
   4. incoherent redundant-group average (P_N weights) preserving the time axis
   5. fold delay spectra
-  6. write one NPZ per spectral window: matrix (Ntimes x Ngroups*Ndly),
-     coordinates (blp_lens, dlys, kperp, kpara, lst_grid, time_grid)
-     plus a provenance JSON.
+  6. write one NPZ per spectral window: matrix (Ntimes x Ngroups*Ndly), the
+     matching effective noise pn_eff and validity mask, coordinates
+     (blp_lens, dlys, kperp, kpara, lst_grid, time_grid) plus a provenance JSON.
 
 Run with the validation_env python on NRAO (hera_pspec 0.4.3.dev89).
 """
@@ -59,6 +62,10 @@ def parse_args():
                         "time-averaged inputs)")
     p.add_argument("--polpair", default="pI",
                    help="polarization (both halves of the pair), default pI")
+    p.add_argument("--quorum", type=float, default=0.95,
+                   help="retain an averaging window when at least this fraction "
+                        "of baseline-pairs measure it; 1.0 reproduces the strict "
+                        "all-baseline intersection")
     p.add_argument("--max-blpairs", type=int, default=0,
                    help="if >0, truncate to this many blpairs (smoke tests)")
     p.add_argument("--spws", default="",
@@ -170,38 +177,60 @@ def main():
         print(f"  discarded {n_dup_rows} rows sharing a window within one "
               f"blpair (centroids straddling a window edge)", flush=True)
 
-    common = None
-    for blp in blpairs:
-        s = set(int(i) for i in per_blp_ids[blp])
-        common = s if common is None else (common & s)
-    common = np.array(sorted(common), dtype=int)
-    print(f"  {len(common)} windows common to all {len(blpairs)} blpairs",
+    # A window is retained when at least `quorum` of the baseline-pairs measure
+    # it. Requiring all of them (quorum 1.0) means a single flagged baseline
+    # discards the window for every baseline, and that attrition grows with the
+    # number of baseline-pairs. Duplicates were already removed above, so each
+    # baseline-pair contributes any given window at most once and a plain count
+    # over the concatenation is the number of baseline-pairs holding it.
+    all_ids = np.concatenate([per_blp_ids[b] for b in blpairs])
+    candidate, id_counts = np.unique(all_ids, return_counts=True)
+    quorum_n = int(np.ceil(args.quorum * len(blpairs)))
+    keep = id_counts >= quorum_n
+    common = candidate[keep].astype(int)
+    window_counts = id_counts[keep].astype(int)
+    print(f"  {len(common)} of {len(candidate)} candidate windows retained "
+          f"(quorum {args.quorum:.0%} = {quorum_n} of {len(blpairs)} blpairs; "
+          f"contributors per window {window_counts.min()}-{window_counts.max()})",
           flush=True)
     if len(common) == 0:
-        raise AssertionError("no common windows across baseline-pairs")
-    common_pos = {c: i for i, c in enumerate(common)}
+        raise AssertionError("no windows met the quorum across baseline-pairs")
+    common_pos = {int(c): i for i, c in enumerate(common)}
+    n_win = len(common)
 
-    # per-blpair row index into the common grid, in window order
-    row_index = {}
+    # Per-blpair row index into the retained grid. Absent windows carry -1;
+    # `present` is the companion mask. Never index the data with the sentinel
+    # directly -- -1 silently selects the last row.
+    row_index, present = {}, {}
     for blp in blpairs:
-        inds, ids = idx_cache[blp], per_blp_ids[blp]
-        sel = np.array([int(c) in common_pos for c in ids])
-        inds, ids = inds[sel], ids[sel]
-        order = np.argsort([common_pos[int(c)] for c in ids])
-        row_index[blp] = inds[order]
-        assert len(row_index[blp]) == len(common), f"blpair {blp} misaligned"
+        ri = np.full(n_win, -1, dtype=np.int64)
+        for ind, wid in zip(idx_cache[blp], per_blp_ids[blp]):
+            pos = common_pos.get(int(wid))
+            if pos is not None:
+                ri[pos] = ind
+        row_index[blp] = ri
+        present[blp] = ri >= 0
 
-    # sanity: cross-blpair centroid spread inside each window < window length
-    stack = np.stack([uvp.time_avg_array[row_index[b]] for b in blpairs])
-    spread_sec = (stack.max(axis=0) - stack.min(axis=0)) * 86400
-    max_spread = float(spread_sec.max()) if len(common) else 0.0
+    # sanity: cross-blpair centroid spread inside each window < window length,
+    # reduced over present entries only
+    stack = np.full((len(blpairs), n_win), np.nan)
+    lst_stack = np.full((len(blpairs), n_win), np.nan)
+    for i, blp in enumerate(blpairs):
+        ri, pr = row_index[blp], present[blp]
+        stack[i, pr] = uvp.time_avg_array[ri[pr]]
+        lst_stack[i, pr] = uvp.lst_avg_array[ri[pr]]
+    spread_sec = (np.nanmax(stack, axis=0) - np.nanmin(stack, axis=0)) * 86400
+    max_spread = float(np.nanmax(spread_sec)) if n_win else 0.0
     print(f"  max cross-blpair centroid spread inside a window: "
           f"{max_spread:.1f}s", flush=True)
     if np.isfinite(grid.window_days) and max_spread > grid.window_days * 86400:
         raise AssertionError("centroid spread exceeds window length")
 
     time_grid = grid.center(common)
-    lst_grid = uvp.lst_avg_array[row_index[blpairs[0]]]
+    # first present baseline-pair per window; a mean would be wrong across the
+    # 0/2pi wrap
+    lst_grid = np.array([lst_stack[np.flatnonzero(np.isfinite(lst_stack[:, j]))[0], j]
+                         for j in range(n_win)])
 
     # ---- redundant length groups ----
     blp_groups, blp_lens, blp_angs, _ = hp.utils.get_blvec_reds(
@@ -240,28 +269,44 @@ def main():
         else:
             w_all = np.ones(data.shape, dtype=float)
 
-        cube = np.zeros((len(common), n_groups, len(dlys)))
+        cube = np.zeros((n_win, n_groups, len(dlys)))
+        # noise of the weighted mean: with w = 1/P_N^2 the variance is 1/sum(w),
+        # so the effective P_N is 1/sqrt(den). Cells with no contributing
+        # baseline get infinite noise rather than a silent zero.
+        pn_eff = np.full((n_win, n_groups, len(dlys)), np.inf)
+        valid = np.zeros((n_win, n_groups, len(dlys)), dtype=bool)
         for gi, g in enumerate(groups):
-            num = np.zeros((len(common), len(dlys)))
-            den = np.zeros((len(common), len(dlys)))
+            num = np.zeros((n_win, len(dlys)))
+            den = np.zeros((n_win, len(dlys)))
             for blp in g:
-                rows = row_index[blp]
-                d = data[rows, :].real
-                finite = np.isfinite(d)
-                w = w_all[rows, :] * finite
+                rows, pr = row_index[blp], present[blp]
+                safe = np.where(rows >= 0, rows, 0)
+                d = data[safe, :].real
+                finite = np.isfinite(d) & pr[:, None]
+                w = w_all[safe, :] * finite
                 num += w * np.where(finite, d, 0.0)
                 den += w
             ok = den > 0
             n_bad_weights += int(np.sum(~ok))
             cube[:, gi, :] = np.where(ok, num / np.where(ok, den, 1.0), 0.0)
+            pn_eff[:, gi, :] = np.where(ok, 1.0 / np.sqrt(np.where(ok, den, 1.0)),
+                                        np.inf)
+            valid[:, gi, :] = ok
 
         # fold: average P(+dly) with P(-dly); keep positive delays
         pos = np.where(dlys > 0)[0]
         pos = pos[np.argsort(dlys[pos])]
-        folded = np.zeros((len(common), n_groups, len(pos)))
+        folded = np.zeros((n_win, n_groups, len(pos)))
+        folded_pn = np.zeros((n_win, n_groups, len(pos)))
+        folded_valid = np.zeros((n_win, n_groups, len(pos)), dtype=bool)
         for j, ip in enumerate(pos):
             im = np.argmin(np.abs(dlys + dlys[ip]))
             folded[:, :, j] = 0.5 * (cube[:, :, ip] + cube[:, :, im])
+            # half-sum of two independent estimates: std = 0.5*sqrt(a^2+b^2)
+            folded_pn[:, :, j] = 0.5 * np.sqrt(pn_eff[:, :, ip] ** 2
+                                               + pn_eff[:, :, im] ** 2)
+            # the fold is only trustworthy when both halves carried weight
+            folded_valid[:, :, j] = valid[:, :, ip] & valid[:, :, im]
         fold_dlys = dlys[pos]
 
         try:
@@ -270,19 +315,37 @@ def main():
         except Exception:
             kparas = np.full(len(pos), np.nan)
 
+        # kperp for the redundant-length groups, from the object's own
+        # cosmology so it stays consistent with kparas
+        try:
+            spw_range = uvp.get_spw_ranges([spw])[0]
+            avg_z = uvp.cosmo.f2z(0.5 * (spw_range[0] + spw_range[1]))
+            kperps = np.asarray(group_lens) * uvp.cosmo.bl_to_kperp(
+                avg_z, little_h=True)
+        except Exception as exc:
+            print(f"  spw {spw}: kperp unavailable ({type(exc).__name__}), "
+                  f"storing NaN", flush=True)
+            kperps = np.full(n_groups, np.nan)
+
         fn = os.path.join(args.outdir,
                           f"{args.label}.aligned.spw{spw:02d}.npz")
         np.savez_compressed(
             fn,
-            matrix=folded.reshape(len(common), n_groups * len(pos)),
+            matrix=folded.reshape(n_win, n_groups * len(pos)),
+            pn_eff=folded_pn.reshape(n_win, n_groups * len(pos)),
+            valid=folded_valid.reshape(n_win, n_groups * len(pos)),
             cube_shape=np.array(folded.shape),
             time_grid=time_grid, lst_grid=lst_grid,
+            window_counts=window_counts,
             blp_lens=np.asarray(group_lens), dlys=fold_dlys,
-            kperps=np.full(n_groups, np.nan), kparas=kparas,
+            kperps=kperps, kparas=kparas,
             group_reps=np.asarray([int(g[0]) for g in groups], dtype=np.int64))
         manifest.append({"spw": spw, "file": os.path.basename(fn),
-                         "shape": list(folded.shape)})
-        print(f"  wrote {fn} shape={folded.shape}", flush=True)
+                         "shape": list(folded.shape),
+                         "invalid_cell_fraction":
+                             float(1.0 - folded_valid.mean())})
+        print(f"  wrote {fn} shape={folded.shape} "
+              f"invalid={1.0 - folded_valid.mean():.4f}", flush=True)
     if n_bad_weights:
         print(f"  WARNING: {n_bad_weights} (time,delay,group) cells had zero "
               f"total weight and were set to 0", flush=True)
@@ -301,6 +364,13 @@ def main():
         "n_dropped_duplicate_window_rows": int(n_dup_rows),
         "n_zero_weight_cells": int(n_bad_weights),
         "weights": "1/P_N^2" if have_pn else "uniform",
+        "quorum": args.quorum,
+        "quorum_n_blpairs": quorum_n,
+        "n_candidate_windows": int(len(candidate)),
+        "window_contributor_counts": {
+            "min": int(window_counts.min()), "max": int(window_counts.max()),
+            "median": float(np.median(window_counts)),
+        },
         "n_common_times": int(len(common)), "n_groups": n_groups,
         "spws": manifest,
         "hera_pspec_version": hp.__version__,
