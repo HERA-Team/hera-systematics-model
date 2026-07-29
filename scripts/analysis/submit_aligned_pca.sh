@@ -31,9 +31,12 @@ SUM_PSPEC=$W/lstbin-outputs/redavg-smoothcal-inpaint-500ns-lstcal/inpaint/single
 EOR_PSPEC=$W/lstbin-outputs/eor-only/single_baseline_files/baselines_merged.pspec.h5
 
 QUORUM=${QUORUM:-0.95}
-MIN_DELAY_NS=${MIN_DELAY_NS:-300}
+# One PCA per threshold. Delay bins begin at 94 ns and step by about the same,
+# so 200 removes only the brightest bin while 300 removes the brightest three.
+# Running both shows whether the basis changes gradually as bins are removed or
+# all at once with the first.
+MIN_DELAY_LIST=${MIN_DELAY_LIST:-"200 300"}
 WEDGE_BUFFER_NS=${WEDGE_BUFFER_NS:-500}
-MASKS="none min-delay above-wedge"
 
 mkdir -p "$OUT/sum" "$OUT/eor-only" "$PCA" "$HOLDOUT" "$LOGS"
 
@@ -42,13 +45,21 @@ submit_branch () {
   local steps="set -e
     $PY $SCRIPTS/build_aligned_samples.py $pspec \
       --outdir $OUT/$label --label $label --quorum $QUORUM"
-  for mask in $MASKS; do
+  local variants="none:"
+  for d in $MIN_DELAY_LIST; do variants="$variants min-delay:$d"; done
+  variants="$variants above-wedge:"
+  for v in $variants; do
+    local mask=${v%%:*} thr=${v##*:} extra="" sub
+    sub=$mask
+    if [ "$mask" = "min-delay" ]; then
+      sub="min-delay-$thr"
+      extra="--min-delay-ns $thr"
+    fi
     steps="$steps
     $PY $SCRIPTS/run_pca_aligned.py \
       --samples-dir $OUT/$label --label $label \
-      --mask $mask --min-delay-ns $MIN_DELAY_NS \
-      --wedge-buffer-ns $WEDGE_BUFFER_NS \
-      --outdir $PCA/$mask"
+      --mask $mask $extra --wedge-buffer-ns $WEDGE_BUFFER_NS \
+      --outdir $PCA/$sub"
   done
   # held-out comparison of the residual representations. Without a matched
   # ideal branch this uses the training mean as the reference, which is a
@@ -84,7 +95,7 @@ JOB_CONTRAST=$(sbatch --parsable \
       --outdir $PCA/none")
 
 echo "submitted: sum=$JOB_SUM eor-only=$JOB_EOR contrast=$JOB_CONTRAST"
-echo "  quorum=$QUORUM masks='$MASKS' min-delay=${MIN_DELAY_NS}ns"
+echo "  quorum=$QUORUM min-delay thresholds='$MIN_DELAY_LIST' ns, plus none and above-wedge"
 echo "  check: sacct -j $JOB_SUM,$JOB_EOR,$JOB_CONTRAST --format=JobID,JobName,State,ExitCode"
 echo "$(date -Is) quorum=$QUORUM sum=$JOB_SUM eor-only=$JOB_EOR contrast=$JOB_CONTRAST" \
   >> "$BASE/job-history.txt"
