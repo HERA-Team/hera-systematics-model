@@ -21,6 +21,8 @@ import re
 
 import numpy as np
 
+from cylindrical import coords_from_npz, wedge_mask
+
 TOP_COMPONENTS = 40  # stored, not a truncation choice for science
 
 
@@ -40,6 +42,15 @@ def parse_args():
                         "than absence); 'drop-features' excludes any feature "
                         "invalid in some row and scatters the components back "
                         "into the full grid afterwards")
+    p.add_argument("--mask", choices=("none", "min-delay", "above-wedge"),
+                   default="none",
+                   help="restrict the PCA to part of the cylindrical plane. "
+                        "'min-delay' drops delay bins below --min-delay-ns; "
+                        "'above-wedge' keeps only cells above the horizon plus "
+                        "--wedge-buffer-ns. Components are still stored on the "
+                        "full grid, zero outside the mask")
+    p.add_argument("--min-delay-ns", type=float, default=300.0)
+    p.add_argument("--wedge-buffer-ns", type=float, default=500.0)
     return p.parse_args()
 
 
@@ -123,13 +134,37 @@ def main():
         n_full = X.shape[1]
         feature_mask = np.ones(n_full, dtype=bool)
         if args.missing == "drop-features" and valid is not None:
-            feature_mask = valid.all(axis=0)
-            if not feature_mask.any():
-                raise AssertionError(
-                    f"spw {spw}: every feature is invalid in some row")
+            keep = valid.all(axis=0)
+            print(f"spw {spw}: dropping {n_full - int(keep.sum())} of {n_full} "
+                  f"features invalid in at least one row", flush=True)
+            feature_mask &= keep
+
+        # Geometry restriction. In linear power the brightest delay bins carry
+        # almost all the variance, so an unrestricted PCA describes those bins
+        # and little else; excluding them asks what the basis looks like over
+        # the region inference actually uses.
+        if args.mask != "none":
+            cs = z["cube_shape"]
+            n_g, n_d = int(cs[1]), int(cs[2])
+            coords = coords_from_npz(z)
+            if args.mask == "min-delay":
+                geom = np.broadcast_to(
+                    (np.asarray(z["dlys"], float) * 1e9 >= args.min_delay_ns),
+                    (n_g, n_d))
+            else:
+                geom = wedge_mask(coords["kperp"], coords["kpara"],
+                                  coords["slope"],
+                                  kpara_per_delay=coords["kpara_per_delay"],
+                                  buffer_ns=args.wedge_buffer_ns)
+            print(f"spw {spw}: mask '{args.mask}' keeps "
+                  f"{int(geom.sum())} of {geom.size} cells "
+                  f"(z={coords['redshift']:.2f})", flush=True)
+            feature_mask &= geom.ravel()
+
+        if not feature_mask.any():
+            raise AssertionError(f"spw {spw}: no features survive the masks")
+        if not feature_mask.all():
             X = X[:, feature_mask]
-            print(f"spw {spw}: dropped {n_full - int(feature_mask.sum())} of "
-                  f"{n_full} features invalid in at least one row", flush=True)
 
         mean = X.mean(axis=0)
         Xc = X - mean
@@ -169,6 +204,7 @@ def main():
             "n_samples": int(X.shape[0]), "n_features": int(X.shape[1]),
             "n_features_total": int(n_full),
             "missing_policy": args.missing,
+            "mask": args.mask,
             "invalid_cell_fraction": invalid_frac,
             "n_components_for_threshold": n99,
             "top5_evr": [float(v) for v in evr[:5]],
