@@ -167,8 +167,15 @@ def main():
         fwd = TRANSFORMS[name](sys_, ideal, **kw)
         back = INVERSES[name](fwd, ideal, **kw)
         both = np.isfinite(fwd) & np.isfinite(back)
+        # The log/exp round trip cancels against the floor, so its absolute
+        # error scales with eps * (floor + |P|) and cells far below the floor
+        # cannot satisfy a pure relative tolerance; the margin also absorbs
+        # rounding differences between numpy/BLAS builds. Real bugs produce
+        # errors of order the values themselves, far above this.
+        atol = 1e3 * np.finfo(float).eps \
+            * (kw.get("floor", 0.0) + float(np.abs(sys_).max()))
         check(f"{name}: inverse recovers P_sys where defined",
-              np.allclose(back[both], sys_[both], rtol=1e-8, atol=0),
+              np.allclose(back[both], sys_[both], rtol=1e-8, atol=atol),
               f"max rel dev="
               f"{np.max(np.abs((back[both] - sys_[both]) / sys_[both])):.2e}")
 
