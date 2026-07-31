@@ -33,10 +33,10 @@ A window is kept when at least `--quorum` (default 0.95) of the baseline
 pairs have it. Pairs that miss a kept window simply add no weight there.
 `--quorum 1.0` means every pair must have the window.
 
-Baseline pairs of the same length are then averaged together with 1/P_N^2
-weights, and the delay axis is folded (the +tau and -tau bins averaged).
-The noise of each averaged cell comes out as 1/sqrt(sum of weights) and is
-saved as well.
+Baseline pairs of the same length are then averaged together with $1/P_N^2$
+weights, and the delay axis is folded (the $+\tau$ and $-\tau$ bins
+averaged). The noise of each averaged cell comes out as $1/\sqrt{\sum w}$
+and is saved as well.
 
 One npz per spectral window, with:
 
@@ -50,7 +50,7 @@ One npz per spectral window, with:
 | `window_counts` | (Ntimes,) | how many baseline pairs contributed per window |
 | `blp_lens` | (Ngroups,) | baseline length of each group [m] |
 | `dlys` | (Ndly,) | folded delays [s] |
-| `kperps`, `kparas` | (Ngroups,), (Ndly,) | k coordinates [h/Mpc]; kperps is NaN if the input had no cosmology attached |
+| `kperps`, `kparas` | (Ngroups,), (Ndly,) | $k_\perp$ and $k_\parallel$ [h/Mpc]; kperps is NaN if the input had no cosmology attached |
 | `group_reps` | (Ngroups,) | one representative baseline-pair id per group |
 
 The provenance json next to it records the input file, all settings, drop
@@ -86,20 +86,20 @@ used, and the top-5 variance ratios.
 
 ## plot_aligned_modes.py
 
-Draws the PCA output in (kperp, kpara): the mean map, the leading modes
+Draws the PCA output in $(k_\perp, k_\parallel)$: the mean map, the leading modes
 (signed, diverging colour scale), a scree plot, the mode scores against
 LST, and a map of how often each cell had data. The horizon line and a
 delay buffer line are drawn on every panel.
 
-If kperp is missing from the input it is computed here: kpara/delay is a
-constant for each spectral window, that constant fixes the redshift, and
-the redshift gives kperp from the baseline length. The redshifts are
+If $k_\perp$ is missing from the input it is computed here: $k_\parallel/\tau$
+is a constant for each spectral window, that constant fixes the redshift,
+and the redshift gives $k_\perp$ from the baseline length. The redshifts are
 written to `<label>.coords_report.json` so they can be checked.
 
 ## cylindrical.py
 
-The shared geometry: redshift from the kpara/delay constant, kperp from
-baseline length, the horizon slope, and `wedge_mask()` for picking cells
+The shared geometry: redshift from the $k_\parallel/\tau$ constant, $k_\perp$
+from baseline length, the horizon slope, and `wedge_mask()` for picking cells
 above the horizon (with an optional buffer given as a delay). Uses the
 astropy Planck15 cosmology. No plotting imports, so it is safe to use on
 the cluster.
@@ -109,18 +109,18 @@ the cluster.
 The candidate ways of turning a (systematic, ideal) pair of power spectra
 into a residual, each with an inverse:
 
-- `linear`: Ps - Pi
-- `signed_asinh`: asinh(Ps/s) - asinh(Pi/s), where s defaults to the cell
-  noise
-- `log_ratio`: log(Ps + floor) - log(Pi + floor); cells that are not
-  positive after the floor come out NaN
-- `noise_weighted`: (Ps - Pi) / P_N
+- `linear`: $P_s - P_i$
+- `signed_asinh`: $\mathrm{asinh}(P_s/s) - \mathrm{asinh}(P_i/s)$, where $s$
+  defaults to the cell noise
+- `log_ratio`: $\log(P_s + P_0) - \log(P_i + P_0)$ with a floor $P_0$; cells
+  that are not positive after the floor come out NaN
+- `noise_weighted`: $(P_s - P_i) / P_N$
 
 Power can be negative in noise-dominated cells (these are cross powers), so
 the transforms return NaN where they are not defined instead of making
 something up. The inverses exist so reconstruction errors can be compared
 in one common space (power units). Note that asinh does not keep shapes: a
-contamination pattern gets multiplied by 1/sqrt(s^2 + P^2) across the
+contamination pattern gets multiplied by $1/\sqrt{s^2 + P^2}$ across the
 plane.
 
 `check_residuals.py` tests all of this on synthetic data with known

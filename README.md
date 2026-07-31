@@ -1,7 +1,7 @@
 # hera-systematics-model
 
 Code for building a PCA model of systematic contamination in HERA cylindrical
-power spectra P(kperp, kpara). The idea is to learn the shapes that
+power spectra $P(k_\perp, k_\parallel)$. The idea is to learn the shapes that
 systematics leave in the power spectrum from simulations, so they can be
 included as nuisance terms in cosmological inference instead of being masked
 or ignored.
