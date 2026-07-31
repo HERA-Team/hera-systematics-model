@@ -1,40 +1,31 @@
 # Manifests
 
-Machine-readable inventory of the H6C IDR2 simulation data products on NRAO
-storage, as surveyed read-only on the `inventory_date` recorded inside the
-file. Produced by `scripts/inventory/` (see its README for regeneration).
+A list of the H6C IDR2 simulation products on NRAO disk, surveyed read-only
+on the date in `inventory_date`. Built by `scripts/inventory/`.
 
-## h6c_idr2_inventory.json
+`h6c_idr2_inventory.json` contains:
 
-Top-level fields:
+- `_schema` — describes the per-product fields (kept inside the file so it
+  explains itself)
+- `inventory_date`, `method` — when and how the survey was done
+- `base_path_release`, `base_path_release_storage_target`,
+  `base_path_working` — the three root paths involved
+- `total_sizes` — `du -sh` per product family
+- `environments` — the python environments found (pipeline and analysis)
+- `data_facts` — short factual statements about counts and completeness
+- `products` — one entry per product family
 
-| Field | Meaning |
-|---|---|
-| `_schema` | Self-description of the per-product fields (kept inside the file so the manifest documents itself) |
-| `inventory_date` | Survey date (ISO) |
-| `method` | How the survey was performed |
-| `base_path_release` | Release-snapshot root on Lustre |
-| `base_path_release_storage_target` | The NFS storage target behind the release symlinks |
-| `base_path_working` | Pipeline working-area root |
-| `total_sizes` | `du -sh` per product family |
-| `environments` | The pipeline and analysis Python environments observed |
-| `data_facts` | Short, verifiable file-level statements (counts, completeness, storage placement) |
-| `products` | One entry per product family — see `_schema` |
+Each product entry has a stable `product_id`, a `role` (ideal_sim,
+mock_component, sky_model, lstbinned_mock, upstream_pspec, deprecated, ...),
+the `path`, `file_format`, `n_files` (counted one level deep; null means
+not counted), `filename_convention`, `sky_components`, `corruptions`,
+`generator` (software versions read from the file histories), and
+`sample_metadata` — header values from one example file (sizes, frequency
+range, units and so on).
 
-Each `products[]` entry carries a stable `product_id`, a `role`
-(e.g. `ideal_sim`, `mock_component`, `sky_model`, `lstbinned_mock`,
-`upstream_pspec`, `deprecated`), the absolute `path`, `file_format`,
-`n_files` (counted at `-maxdepth 1`; `null` = not counted),
-`filename_convention`, `sky_components`, `corruptions`, `generator`
-(software provenance read from file histories), and `sample_metadata` —
-header fields read from one representative file (dimensions, frequency range,
-units, and similar).
+Products that were replaced stay in the list with `role: "deprecated"`
+instead of being deleted, so it stays clear what replaced what.
 
-Deprecated products are retained in the manifest with `role: "deprecated"`
-rather than removed, so supersession stays visible.
-
-## h6c_idr2_inventory.csv
-
-A flattened one-row-per-product view of the JSON (identifier, role, path,
-format, counts, sky components, corruptions, generator) for spreadsheet use.
-The JSON is authoritative; the CSV omits `sample_metadata`.
+`h6c_idr2_inventory.csv` is the same list flattened to one row per product,
+for spreadsheets. It leaves out `sample_metadata`; the json is the full
+version.
