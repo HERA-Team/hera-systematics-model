@@ -2,7 +2,7 @@ import numpy as np
 import h5py
 
 from hera_systematics_model.artifacts import canonical_json
-from hera_systematics_model.parity import compare_arrays, compare_spectra, exact_equal
+from hera_systematics_model.parity import compare_arrays, compare_power, compare_spectra, exact_equal
 
 
 def test_parity_requires_identical_support_and_measures_complex_error():
@@ -24,6 +24,21 @@ def test_zero_reference_has_explicit_unavailable_relative_metric():
     canonical_json(result)
     assert not exact_equal(np.arange(3), np.arange(3)[::-1])
     assert not compare_arrays(np.arange(3), np.arange(4))["passed"]
+
+
+def test_noise_allowance_is_explicit_and_cannot_hide_missing_or_invalid_noise():
+    reference = np.array([0., 1e8, np.nan])
+    changed = np.array([5e-7, 1e8 + .1, np.nan])
+    noise = np.array([1., 1., np.nan])
+    result = compare_power(reference, changed, noise, noise_atol=1e-6)
+    assert result["passed"] and not result["strict_passed"]
+    assert result["maximum_excess_in_noise_units"] == 5e-7
+    assert not compare_power(reference, changed, noise)["passed"]
+    for invalid_noise in (0., -1., np.nan, np.inf):
+        noise[0] = invalid_noise
+        assert not compare_power(reference, changed, noise, noise_atol=1e-6)["passed"]
+    changed[-1] = 0.
+    assert not compare_power(reference, changed, np.ones(3), noise_atol=1e6)["passed"]
 
 
 def synthetic_spectrum(path):

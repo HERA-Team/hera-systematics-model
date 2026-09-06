@@ -41,7 +41,7 @@ class SpectralSelection:
         value = self.group.attrs[name]
         if name == "polpair_array":
             return value[self.polarizations]
-        if name == "scalar_array":
+        if name == "scalar_array" and not isinstance(self.polarizations, slice):
             return value[:, self.polarizations]
         return value
 
