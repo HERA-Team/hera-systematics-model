@@ -55,6 +55,8 @@ class LinearModel:
 
     def predict(self, power, ideal, pn, valid, predictor):
         """Infer coefficients from predictor cells only; return linear residuals."""
+        if not self.metadata.get("converged", False):
+            raise CandidateFailure("model did not converge")
         power, ideal, pn, valid = measured_arrays(power, ideal, pn, valid)
         predictor = np.asarray(predictor)
         if predictor.shape != (power.shape[1],) or predictor.dtype.kind != "b":
