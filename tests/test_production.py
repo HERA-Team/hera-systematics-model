@@ -7,7 +7,7 @@ from hera_systematics_model.production import Resources, create_run, define_task
 
 def task():
     return {"name": "baseline-1", "command": ["/bin/true"], "environment": {}, "inputs": [],
-            "outputs": [{"path": "spectrum.npz", "kind": "npz"}], "projected_bytes": 100,
+            "outputs": [{"path": "spectrum.npz", "kind": "npz"}], "projected_bytes": 1000000,
             "resources": {"cpus": 1, "memory_mib": 1024, "hours": 1}}
 
 

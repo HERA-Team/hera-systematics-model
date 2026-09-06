@@ -11,6 +11,7 @@ import numpy as np
 
 from .artifacts import sha256_file
 from .configuration import capture_runtime, digest_json, file_identity
+from .execution import execute_checked, storage_monitor
 from .production import read_run, require_storage, validate_task, write_json_exclusive
 
 
@@ -109,12 +110,16 @@ def run_task(run, name, require_slurm=True):
         command = [arg.replace("{output_dir}", str(directory)) for arg in task["command"]]
         environment = os.environ.copy()
         environment.update({k: v.replace("{output_dir}", str(directory)) for k, v in task["environment"].items()})
+        record["storage_monitor"] = {"interval_seconds": 10., "measurement": "sampled logical file sizes"}
+        check_limits = storage_monitor(run.parent, directory, task["projected_bytes"], record["storage_monitor"])
         with (directory / "stdout.log").open("xb") as stdout, (directory / "stderr.log").open("xb") as stderr:
-            result = subprocess.run(command, cwd=directory, env=environment, stdout=stdout, stderr=stderr,
-                                    timeout=task["resources"]["hours"] * 3600, check=False)
-        record.update(exit_code=result.returncode, command=command, finished_unix=time.time())
-        if result.returncode != 0:
-            raise ValueError(f"underlying command exited {result.returncode}")
+            code = execute_checked(command, directory, environment, stdout, stderr,
+                task["resources"]["hours"] * 3600, check_limits)
+        record.update(exit_code=code, command=command, finished_unix=time.time())
+        if code != 0:
+            raise ValueError(f"underlying command exited {code}")
+        for item in task["inputs"]:
+            verify_input(item)
         record["products"] = [verify_product(directory, spec) for spec in task["outputs"]]
         record["storage"] = require_storage(run.parent, 0)
         write_json_exclusive(directory / "success.json", record)
