@@ -7,6 +7,7 @@ import numpy as np
 from .kernel import fit_kernel
 from .masked import fit_masked
 from .models import fit_complete, measured_arrays
+from .model_io import ConstantModel
 from .scoring import CandidateFailure, score_predictions, training_mean
 
 
@@ -44,7 +45,7 @@ class PredictionResult:
 def fit_candidate(arrays, train, candidate, predictor, window_ids, cache=None):
     method = candidate["method"]
     if method in ("zero", "mean"):
-        return None
+        return ConstantModel.fit([a[train] for a in arrays], window_ids[train], method)
     arguments = {key: value for key, value in candidate.items() if key != "method"}
     train_arrays = [a[train] for a in arrays]
     if method == "complete":

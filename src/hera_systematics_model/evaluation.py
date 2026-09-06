@@ -1,10 +1,12 @@
 """Nested physical-time selection with disjoint target-feature prediction."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
-from .artifacts import write_artifact
+from .artifacts import read_artifact, write_artifact
+from .model_io import load_model_collection, save_model_collection
 from .prediction import candidate_grid, predict_partitioned
 from .scoring import CandidateFailure, choose_simplest
 from .splits import feature_partitions, time_folds
@@ -42,7 +44,19 @@ class Evaluation:
     models: dict
 
     def save(self, path):
-        return write_artifact(path, "evaluation", self.arrays, self.metadata)
+        path = Path(path)
+        if path.exists() or path.with_suffix(".json").exists():
+            raise FileExistsError(path)
+        metadata = dict(self.metadata)
+        metadata["models"] = save_model_collection(path.with_suffix(".models"), self.models,
+                                                  metadata.get("identity"))
+        return write_artifact(path, "evaluation", self.arrays, metadata)
+
+    @classmethod
+    def load(cls, path):
+        arrays, metadata = read_artifact(path, "evaluation")
+        models = load_model_collection(Path(path).parent, metadata["models"], metadata.get("identity"))
+        return cls(arrays, metadata, models)
 
 
 def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12,
