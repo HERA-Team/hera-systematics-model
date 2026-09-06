@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from hera_systematics_model.scoring import CandidateFailure
-from hera_systematics_model.stability import block_bootstrap_indices, bootstrap_stability, compare_components
+from hera_systematics_model.stability import block_bootstrap_indices, bootstrap_stability, compare_components, spectral_clusters
 from test_models import low_rank_data
 
 
@@ -39,3 +39,19 @@ def test_low_rank_bootstrap_preserves_subspace_and_records_every_draw():
     assert meta["complete"]
     np.testing.assert_allclose(result["principal_angles"], 0, atol=4e-8)
     assert result["sample_rows"].shape == (5, 40)
+    np.testing.assert_equal(np.sort(result["assignments"], axis=1), np.tile([0, 1], (5, 1)))
+    assert np.all(np.isin(result["signs"], [-1., 1.]))
+    assert np.isfinite(result["cluster_principal_angles"]).all()
+    assert sorted(sum(meta["spectral_clusters"], [])) == [0, 1]
+    assert meta["cluster_crosses_rank_boundary"] is False
+
+
+def test_spectral_clusters_report_close_modes_and_unresolved_rank_boundary():
+    clusters, boundary = spectral_clusters([10, 9.5, 4, 3.9], 3)
+    assert clusters == [[0, 1], [2]]
+    assert boundary is True
+    assert spectral_clusters([10, 9.5, 4], 3)[1] is None
+    assert spectral_clusters([], 0) == ([], None)
+    for energies, rank in [([1, 2], 2), ([1], -1), ([1], 1.5), ([np.nan], 1), ([-1], 1)]:
+        with pytest.raises(ValueError, match="spectral energies"):
+            spectral_clusters(energies, rank)

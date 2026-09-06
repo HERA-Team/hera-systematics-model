@@ -69,6 +69,26 @@ def compare_components(reference, trial, reference_mask=None, trial_mask=None):
             "assignment": right, "signs": np.where(matched < 0, -1., 1.), "common_features": int(mask.sum())}
 
 
+def spectral_clusters(energies, rank, relative_gap=.1):
+    """Group adjacent retained directions whose energy separation is small."""
+    energies = np.asarray(energies, float)
+    if (type(rank) is not int or rank < 0 or energies.ndim != 1 or len(energies) < rank
+            or not np.isfinite(energies).all() or np.any(energies < 0)
+            or np.any(np.diff(energies) > 0) or not 0 <= relative_gap < 1):
+        raise ValueError("invalid ordered spectral energies")
+    clusters = []
+    for index in range(rank):
+        gap = (energies[index - 1] - energies[index]) / energies[index - 1] if index and energies[index - 1] else 1.
+        if not index or gap > relative_gap:
+            clusters.append([])
+        clusters[-1].append(index)
+    boundary = None
+    if rank and len(energies) > rank:
+        boundary = bool(energies[rank - 1] > 0
+                        and (energies[rank - 1] - energies[rank]) / energies[rank - 1] <= relative_gap)
+    return clusters, boundary
+
+
 def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_length=12, seed=0):
     """Refit the fixed selected configuration, including training preprocessing."""
     if n_replicates < 1:
@@ -83,6 +103,9 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
     result = {"sample_rows": np.full((n_replicates, len(ids)), -1, int),
               "signed_cosines": np.full((n_replicates, rank), np.nan),
               "principal_angles": np.full((n_replicates, rank), np.nan),
+              "assignments": np.full((n_replicates, rank), -1, int),
+              "signs": np.full((n_replicates, rank), np.nan),
+              "cluster_principal_angles": np.full((n_replicates, rank), np.nan),
               "common_features": np.zeros(n_replicates, int)}
     records = []
     kernel = candidate["method"] == "kernel"
@@ -91,6 +114,8 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
         ref_components = (reference_scores - reference_scores.mean(axis=0)).T
     else:
         ref_components = reference.components[:rank] if rank else np.empty((0, len(predictors)))
+    energies = reference.eigenvalues if kernel else (reference.singular_values ** 2 if rank else np.empty(0))
+    clusters, boundary = spectral_clusters(energies, rank)
     for index in range(n_replicates):
         try:
             sampled, starts, lengths = block_bootstrap_indices(ids, block_length, rng)
@@ -100,17 +125,28 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
                 raise CandidateFailure("bootstrap factorization did not converge")
             if kernel:
                 _, scores = replicate.predict(*arrays, predictors)
-                compared = compare_components(ref_components, (scores - scores.mean(axis=0)).T)
+                trial = (scores - scores.mean(axis=0)).T
+                ref_mask = trial_mask = None
             else:
                 trial = replicate.components[:rank] if rank else np.empty_like(ref_components)
-                compared = compare_components(ref_components, trial, reference.feature_mask, replicate.feature_mask)
+                ref_mask, trial_mask = reference.feature_mask, replicate.feature_mask
+            compared = compare_components(ref_components, trial, ref_mask, trial_mask)
             for key in ("signed_cosines", "principal_angles", "common_features"):
                 result[key][index] = compared[key]
+            result["assignments"][index] = compared["assignment"]
+            result["signs"][index] = compared["signs"]
+            for cluster in clusters:
+                subspace = compare_components(ref_components[cluster], trial[compared["assignment"][cluster]], ref_mask, trial_mask)
+                result["cluster_principal_angles"][index, cluster] = subspace["principal_angles"]
             records.append({"replicate": index, "status": "evaluated", "block_start_rows": starts.tolist(),
                             "block_lengths": lengths.tolist(), "iterations": replicate.metadata.get("iterations")})
         except (CandidateFailure, np.linalg.LinAlgError) as error:
             records.append({"replicate": index, "status": "unavailable", "reason": str(error)})
     return result, {"candidate": candidate, "replicates": n_replicates, "block_length": block_length,
         "seed": seed, "comparison_space": "scores on original windows" if kernel else "selected representation features",
+        "spectral_clusters": clusters, "cluster_relative_energy_gap": .1,
+        "cluster_crosses_rank_boundary": boundary,
+        "rank_boundary_unavailable_reason": "no discarded direction in saved spectrum" if boundary is None else None,
+        "spectral_cluster_measure": "kernel eigenvalues" if kernel else "squared score singular values",
         "resampling": "noncircular moving blocks within fixed continuous segments", "records": records,
         "complete": all(item["status"] == "evaluated" for item in records)}
