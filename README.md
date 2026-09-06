@@ -10,7 +10,7 @@ What is where:
 
 - `manifests/` - list of the H6C IDR2 simulation products on NRAO disk (json + csv)
 - `scripts/inventory/` - the scripts that made that list
-- `scripts/analysis/` - the analysis pipeline: align, average, PCA, plots, held-out tests
+- `scripts/analysis/` - compatibility entrypoints and historical artifact readers
 - `src/hera_systematics_model/` - paired artifacts, residual transforms, models and validation
 - `tests/` - synthetic verification without the HERA data stack
 - `results/` - small summary files from finished runs
@@ -33,13 +33,15 @@ The unified command operates on versioned NPZ artifacts with JSON sidecars:
 hera-systematics pair --corrupted corrupted.npz --ideal ideal.npz --output paired.npz
 hera-systematics evaluate --samples paired.npz --config analysis.json --output evaluation.npz
 hera-systematics fit --samples paired.npz --config analysis.json --output fit.npz
+hera-systematics diagnostics --samples paired.npz --fit fit.npz --evaluation evaluation.npz --output diagnostics.npz
+hera-systematics plot diagnostics.npz --output-dir figures
 hera-systematics verify evaluation.npz
 ```
 
 An empty configuration object selects all four residual representations,
 complete-feature PCA, masked factorization and the kernel comparison. Optional
 keys are `guard` (8, 12 or 16 native windows), `max_rank` (0 through 20),
-`include_kernel`, `representations`, `methods`, and either `group` or `delay`
+`include_kernel`, `representations`, `methods`, `group_exclusion`, and either `group` or `delay`
 for a localized slice. The defaults use guard 12 and maximum rank 20. Run
 expensive analyses through the compute scheduler.
 
@@ -56,14 +58,17 @@ versions. Numerical arrays can contain masked unavailable values; JSON cannot
 contain nonfinite numbers. Nonlinear and per-cell-scaled representations do
 not define a universal basis in physical power units.
 
-The historical corrupted-power analysis scripts remain available:
+Production tasks use immutable run and task definitions. The submission
+command accounts for all active workflow tasks, checks resource and retained
+storage limits, and reserves each task once:
 
 ```bash
-./scripts/analysis/submit_aligned_pca.sh
-SKIP_BUILD=1 ./scripts/analysis/submit_aligned_pca.sh
+hera-systematics production --help
+hera-systematics production submit --run RUN --task TASK --python PYTHON --package-source SRC
+hera-systematics production verify --run RUN --task TASK --output acceptance.json
 ```
 
-To plot from the output npz files (works anywhere):
+Historical single-branch PCA files remain readable for descriptive plotting:
 
 ```bash
 python scripts/analysis/plot_aligned_modes.py --pca-dir <dir> --label sum --outdir figures
