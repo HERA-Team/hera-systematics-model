@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hera-systematics-model"
+version = "0.1.0"
+description = "Matched residual analysis for cylindrical radio power spectra"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26,<3", "scipy>=1.14,<2"]
+
+[project.optional-dependencies]
+io = ["h5py>=3.10", "hera-pspec>=0.4", "pyuvdata>=3", "astropy>=6"]
+kernel = ["scikit-learn>=1.5,<2"]
+plot = ["matplotlib>=3.8", "astropy>=6"]
+dev = ["pytest>=8,<9", "build>=1.2"]
+
+[project.scripts]
+hera-systematics = "hera_systematics_model.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -p no:cacheprovider"
