@@ -7,6 +7,7 @@ import numpy as np
 
 from .artifacts import read_artifact, write_artifact
 from .model_io import load_model_collection, save_model_collection
+from .evaluation_state import validate_evaluation
 from .prediction import candidate_grid, fit_candidate, predict_partitioned
 from .scoring import CandidateFailure, choose_simplest, score_predictions
 from .splits import feature_partitions, time_folds
@@ -85,6 +86,7 @@ class Evaluation:
     models: dict
 
     def save(self, path):
+        validate_evaluation(self.arrays, self.metadata, self.models)
         path = Path(path)
         if path.exists() or path.with_suffix(".json").exists():
             raise FileExistsError(path)
@@ -97,6 +99,7 @@ class Evaluation:
     def load(cls, path):
         arrays, metadata = read_artifact(path, "evaluation")
         models = load_model_collection(Path(path).parent, metadata["models"], metadata.get("identity"))
+        validate_evaluation(arrays, metadata, models)
         return cls(arrays, metadata, models)
 
 
