@@ -74,6 +74,8 @@ def main(argv=None):
     add_commands(commands)
     from .production_cli import add_commands as add_production
     add_production(commands)
+    from .visibility_cli import add_commands as add_visibility
+    add_visibility(commands)
     pair = commands.add_parser("pair", help="Join and fold two spectrum-record artifacts")
     pair.add_argument("--corrupted", required=True)
     pair.add_argument("--ideal", required=True)
