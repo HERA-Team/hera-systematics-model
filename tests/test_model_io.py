@@ -4,8 +4,10 @@ import numpy as np
 import pytest
 
 from hera_systematics_model.evaluation import Evaluation, evaluate_nested
-from hera_systematics_model.model_io import ConstantModel, load_model
+from hera_systematics_model.model_io import ConstantModel, load_model, predict_samples
+from hera_systematics_model.views import analysis_view
 from test_evaluation import series
+from test_samples import paired
 
 
 @pytest.mark.parametrize("method", ["zero", "mean"])
@@ -35,3 +37,13 @@ def test_evaluation_saves_all_prediction_state_and_checks_metadata_hash(tmp_path
     metadata_path.write_text(json.dumps(metadata))
     with pytest.raises(ValueError, match="hash"):
         Evaluation.load(path)
+
+
+def test_model_prediction_rejects_changed_physical_features(paired):
+    arrays, _, identity = analysis_view(paired)
+    model = ConstantModel.fit(arrays, paired.window_ids, "mean")
+    model.metadata["identity"] = identity
+    predict_samples(model, paired, np.ones(8, bool))
+    paired.delay_s = paired.delay_s * 2
+    with pytest.raises(ValueError, match="identities"):
+        predict_samples(model, paired, np.ones(8, bool))

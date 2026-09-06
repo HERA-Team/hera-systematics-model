@@ -94,3 +94,14 @@ def load_model_collection(parent, references, identity=None):
                 raise ValueError("model physical identity mismatch")
             result[label].append(model)
     return result
+
+
+def predict_samples(model, samples, predictor, group=None, delay=None):
+    """Require exact fitted physical feature identities before array inference."""
+    from .views import analysis_view
+
+    samples.validate()
+    arrays, _, identity = analysis_view(samples, group, delay)
+    if model.metadata.get("identity") != identity:
+        raise ValueError("prediction sample identities differ from fitted features")
+    return model.predict(*arrays, predictor=predictor)

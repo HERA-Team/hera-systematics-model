@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
 
-from hera_systematics_model.kernel import KernelModel, fit_kernel
+from hera_systematics_model.kernel import KernelModel, fit_kernel, median_distance_gamma, rbf
+from hera_systematics_model.artifacts import write_artifact
+from dataclasses import fields
 from hera_systematics_model.scoring import CandidateFailure
 from test_models import low_rank_data
 
@@ -28,3 +30,20 @@ def test_kernel_cannot_silently_impute_required_predictors():
     valid[25, 0] = False
     with pytest.raises(CandidateFailure, match="incomplete"):
         model.predict(power[25:], ideal[25:], pn[25:], valid[25:], predictor)
+
+
+def test_larger_bandwidth_produces_broader_kernel():
+    values = np.arange(5.)[:, None]
+    narrow = rbf(values, values, median_distance_gamma(values, .1))
+    broad = rbf(values, values, median_distance_gamma(values, 10.))
+    assert broad[0, 1] > narrow[0, 1]
+
+
+def test_inconsistent_kernel_decoder_state_is_rejected(tmp_path):
+    model = fit_kernel(*low_rank_data(), 2, np.arange(30) < 15)
+    arrays = {f.name: getattr(model, f.name) for f in fields(model) if f.name != "metadata"}
+    arrays["dual"] = arrays["dual"][:, :-1]
+    path = tmp_path / "model.npz"
+    write_artifact(path, "fitted-model", arrays, model.metadata)
+    with pytest.raises(ValueError, match="dimensions"):
+        KernelModel.load(path)

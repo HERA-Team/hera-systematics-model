@@ -12,11 +12,14 @@ from .scoring import CandidateFailure
 
 
 def median_distance_gamma(values, factor=1.):
+    """Use factor times the training median squared distance as RBF width."""
     distances = pdist(values, metric="sqeuclidean")
     median = float(np.median(distances)) if len(distances) else 0.
     if not np.isfinite(median) or median <= 0:
         raise CandidateFailure("no positive median kernel distance")
-    return factor / median
+    if not np.isfinite(factor) or factor <= 0:
+        raise ValueError("kernel width factor must be positive")
+    return 1 / (factor * median)
 
 
 def rbf(left, right, gamma):
@@ -43,6 +46,8 @@ class KernelModel:
         return self.metadata["rank"]
 
     def predict(self, power, ideal, pn, valid, predictor):
+        if not self.metadata.get("converged", False):
+            raise CandidateFailure("kernel model did not converge")
         power, ideal, pn, valid = measured_arrays(power, ideal, pn, valid)
         predictor = np.asarray(predictor)
         if (predictor.shape != self.input_mask.shape or predictor.dtype.kind != "b"
@@ -76,7 +81,28 @@ class KernelModel:
         arrays, metadata = read_artifact(path, "fitted-model")
         if metadata.get("method") != "kernel":
             raise ValueError("not a kernel residual model")
-        return cls(**arrays, metadata=metadata)
+        model = cls(**arrays, metadata=metadata)
+        nf, nt, rank = len(model.mean), len(model.training_ids), model.rank
+        if (type(rank) is not int or not 1 <= rank <= min(10, nt - 2)
+                or model.mean.shape != (nf,) or model.linear_mean.shape != (nf,)
+                or any(mask.shape != (nf,) or mask.dtype.kind != "b" for mask in (model.input_mask, model.feature_mask))
+                or np.any(model.input_mask & ~model.feature_mask)
+                or model.training_ids.shape != (nt,) or model.training_ids.dtype.kind not in "iu"
+                or len(np.unique(model.training_ids)) != nt
+                or model.training_inputs.shape != (nt, model.input_mask.sum())
+                or model.eigenvectors.shape != (nt, rank) or model.eigenvalues.shape != (rank,)
+                or model.kernel_mean.shape != (nt,) or model.training_scores.shape != (nt, rank)
+                or model.dual.shape != (nt, model.feature_mask.sum())):
+            raise ValueError("invalid kernel state dimensions")
+        finite = (model.mean, model.linear_mean[model.feature_mask], model.training_inputs,
+                  model.eigenvectors, model.eigenvalues, model.kernel_mean, model.training_scores, model.dual)
+        if (not all(np.isfinite(a).all() for a in finite) or np.any(model.eigenvalues <= 0)
+                or metadata.get("representation") not in TRANSFORMS
+                or not isinstance(metadata.get("params"), dict) or not isinstance(metadata.get("converged"), bool)
+                or any(not np.isfinite(metadata[key]) or metadata[key] <= 0
+                       for key in ("input_scale", "target_scale", "gamma", "decoder_gamma", "alpha"))):
+            raise ValueError("invalid kernel numerical state")
+        return model
 
 
 def fit_kernel(power, ideal, pn, valid, rank, predictor, representation="linear", log_margin=1.,
@@ -116,4 +142,5 @@ def fit_kernel(power, ideal, pn, valid, rank, predictor, representation="linear"
         encoder.eigenvalues_, rbf(inputs, inputs, gamma).mean(axis=0), scores, dual, ids,
         {"method": "kernel", "representation": representation, "params": params, "rank": rank,
          "bandwidth": bandwidth, "alpha": alpha, "gamma": gamma, "decoder_gamma": decoder_gamma,
+         "kernel_definition": "exp(-squared_distance / (bandwidth * training_median_squared_distance))",
          "input_scale": input_scale, "target_scale": target_scale, "converged": True})
