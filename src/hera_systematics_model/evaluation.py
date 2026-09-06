@@ -51,7 +51,8 @@ def select_within(arrays, window_ids, pool, partitions, candidates, guard=12, n_
                                              partitions, candidate, cache=cache)
                 losses[ci, fi] = result.loss.mean
             except (CandidateFailure, np.linalg.LinAlgError) as error:
-                failures.append({"fold": fi, "candidate": ci, "reason": str(error)})
+                failures.append({"fold": fi, "candidate": ci, "reason": str(error),
+                                 "diagnostics": getattr(error, "diagnostics", {})})
     try:
         selected, rule = choose_simplest(candidates, losses)
     except CandidateFailure as error:
@@ -144,7 +145,8 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
                           modeled_cells=int(result.modeled.sum()), mean_only_cells=int(result.mean_only.sum()),
                           zero_only_cells=int(result.zero_only.sum()))
         except (CandidateFailure, np.linalg.LinAlgError) as error:
-            report.update(status="candidate_failure", reason=str(error))
+            report.update(status="candidate_failure", reason=str(error),
+                          diagnostics=getattr(error, "diagnostics", {}))
     metadata = {"guard_windows": guard, "outer_folds": n_outer, "inner_folds": n_inner,
                 "feature_shape": list(feature_shape), "feature_axis": axis,
                 "candidates": candidates, "folds": reports,

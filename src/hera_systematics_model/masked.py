@@ -4,6 +4,7 @@ import numpy as np
 
 from .models import LinearModel, prepare_training
 from .scoring import CandidateFailure, training_mean
+from .solvers import solve_observed
 
 
 def fit_masked(power, ideal, pn, valid, rank, representation="linear", log_margin=1.,
@@ -35,23 +36,27 @@ def fit_masked(power, ideal, pn, valid, rank, representation="linear", log_margi
         return float(np.sum(error ** 2))
 
     initial = previous = objective()
+    objective_history = [initial]
+    conditioning = {"row_max_condition": None, "feature_max_condition": None}
+
+    def record_condition(kind, evidence):
+        key = kind + "_max_condition"
+        conditioning[key] = max(conditioning[key] or 0., evidence["condition_number"])
     numerical_floor = np.finfo(float).eps * max(float(np.sum(centered ** 2)), 1.)
     converged = rank == 0
     iteration = 0
     for iteration in range(1, max_iter + 1) if rank else ():
         for group, usable in enumerate(row_patterns):
             rows = np.flatnonzero(row_groups == group)
-            fit, _, effective, _ = np.linalg.lstsq(
-                basis[:, usable].T, (values[np.ix_(rows, usable)] - mean[usable]).T, rcond=1e-10)
-            if effective < rank:
-                raise CandidateFailure("rank-deficient masked row solve")
+            fit, evidence = solve_observed(
+                basis[:, usable].T, (values[np.ix_(rows, usable)] - mean[usable]).T)
+            record_condition("row", evidence)
             scores[rows] = fit.T
         for group, usable in enumerate(column_patterns):
             columns = np.flatnonzero(column_groups == group)
             design = np.column_stack([np.ones(usable.sum()), scores[usable]])
-            fit, _, effective, _ = np.linalg.lstsq(design, values[np.ix_(usable, columns)], rcond=1e-10)
-            if effective < rank + 1:
-                raise CandidateFailure("rank-deficient masked feature solve")
+            fit, evidence = solve_observed(design, values[np.ix_(usable, columns)])
+            record_condition("feature", evidence)
             mean[columns], basis[:, columns] = fit[0], fit[1:]
         score_mean = scores.mean(axis=0)
         mean += score_mean @ basis
@@ -59,6 +64,7 @@ def fit_masked(power, ideal, pn, valid, rank, representation="linear", log_margi
         q, r = np.linalg.qr(basis.T, mode="reduced")
         basis, scores = q.T, scores @ r.T
         current = objective()
+        objective_history.append(current)
         if not np.isfinite(current) or current > previous + 1e-10 * max(initial, 1.):
             raise CandidateFailure("masked objective is nonfinite or increased")
         if abs(previous - current) <= tolerance * max(previous, numerical_floor):
@@ -84,5 +90,6 @@ def fit_masked(power, ideal, pn, valid, rank, representation="linear", log_margi
         np.empty(0), ids, {"method": "masked", "representation": representation,
          "params": params, "rank": rank, "converged": converged, "iterations": iteration,
          "initial_observed_loss": initial, "observed_loss": previous,
+         "observed_loss_history": objective_history, "conditioning": conditioning,
          "objective_numerical_floor": numerical_floor,
          "tolerance": tolerance, "max_iter": max_iter})

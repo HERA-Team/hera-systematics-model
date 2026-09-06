@@ -7,6 +7,7 @@ import numpy as np
 from .artifacts import read_artifact, write_artifact
 from .residuals import TRANSFORMS, INVERSES
 from .scoring import CandidateFailure, training_mean
+from .solvers import solve_observed
 
 
 def measured_arrays(power, ideal, pn, valid):
@@ -55,10 +56,10 @@ class LinearModel:
     def rank(self):
         return self.metadata["rank"]
 
-    def predict(self, power, ideal, pn, valid, predictor):
+    def predict(self, power, ideal, pn, valid, predictor, diagnostics=None):
         """Infer coefficients from predictor cells only; return linear residuals."""
         if not self.metadata.get("converged", False):
-            raise CandidateFailure("model did not converge")
+            raise CandidateFailure("model did not converge", self.metadata)
         power, ideal, pn, valid = measured_arrays(power, ideal, pn, valid)
         predictor = np.asarray(predictor)
         if predictor.shape != (power.shape[1],) or predictor.dtype.kind != "b":
@@ -80,11 +81,12 @@ class LinearModel:
             usable = valid[row, observed_features] & np.isfinite(transformed[row])
             indices = observed_features[usable]
             if len(indices) < self.rank + 2:
-                raise CandidateFailure("insufficient observed predictor cells")
-            coefficients, _, effective_rank, _ = np.linalg.lstsq(
-                basis[:, indices].T, transformed[row, usable] - self.mean[indices], rcond=1e-10)
-            if effective_rank < self.rank:
-                raise CandidateFailure("rank-deficient predictor subspace")
+                raise CandidateFailure("insufficient observed predictor cells",
+                    {"row": row, "observations": len(indices), "required": self.rank + 2})
+            coefficients, evidence = solve_observed(
+                basis[:, indices].T, transformed[row, usable] - self.mean[indices])
+            if diagnostics is not None:
+                diagnostics.append({"row": row, "predictor_features": indices.tolist(), **evidence})
             scores[row] = coefficients
             reconstructed = self.mean + coefficients @ basis
             with np.errstate(over="ignore", invalid="ignore", divide="ignore"):

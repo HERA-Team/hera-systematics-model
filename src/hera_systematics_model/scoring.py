@@ -8,6 +8,10 @@ import numpy as np
 class CandidateFailure(ValueError):
     """A candidate cannot supply valid predictions on its required support."""
 
+    def __init__(self, message, diagnostics=None):
+        super().__init__(message)
+        self.diagnostics = {} if diagnostics is None else diagnostics
+
 
 def training_mean(residual, valid):
     residual, valid = np.asarray(residual), np.asarray(valid)
