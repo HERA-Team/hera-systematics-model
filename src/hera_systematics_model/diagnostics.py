@@ -50,7 +50,7 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
               "scores": descriptive.arrays["training_scores"].copy(),
               "prediction": evaluation.arrays["prediction"].copy(),
               "window_loss": evaluation.arrays["window_loss"].copy(),
-              "projection_window_loss": evaluation.arrays["projection_window_loss"].copy(),
+              "projection_window_loss": evaluation.arrays.get("projection_window_loss", np.full(len(power), np.nan)).copy(),
               "zero_baseline_loss": evaluation.arrays["zero_baseline_loss"].copy(),
               "mean_baseline_loss": evaluation.arrays["mean_baseline_loss"].copy()}
     with warnings.catch_warnings():
@@ -88,6 +88,8 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
         "noise_assumption": samples.metadata["noise_model"], "horizon_definition": "baseline group length divided by speed of light",
         "horizon_buffer_ns": 500., "scores_source": "full-data descriptive fit",
         "loss_source": "outer physical-time and withheld-feature predictions",
+        "projection_available": "projection_window_loss" in evaluation.arrays,
+        "projection_unavailable_reason": None if "projection_window_loss" in evaluation.arrays else "not recorded in this evaluation artifact",
         "limitations": ["correlated windows from one LST arc", "no signal-preservation injections",
                         "no independent-realization generalization", "no calibrated nuisance priors or inference integration"]}
     return output, metadata

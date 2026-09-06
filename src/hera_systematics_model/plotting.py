@@ -108,11 +108,13 @@ def plot_diagnostics(arrays, metadata, directory):
         save(fig, f"scores-{mode + 1:02d}")
 
     fig, ax = plt.subplots(figsize=(11, 4), layout="constrained")
-    for name, legend in (("window_loss", "Selected model"), ("zero_baseline_loss", "Zero residual"),
-                         ("mean_baseline_loss", "Training mean")):
+    for name, legend, color in (("window_loss", "Selected model", "C0"), ("zero_baseline_loss", "Zero residual", "C1"),
+                                ("mean_baseline_loss", "Training mean", "C2")):
         for index, segment in enumerate(segments):
-            ax.plot(lst[segment], arrays[name][segment], ".-", label=legend if index == 0 else None)
-    ax.set_yscale("symlog", linthresh=max(float(np.nanmedian(arrays["mean_baseline_loss"])) * 1e-4, 1e-20))
+            ax.plot(lst[segment], arrays[name][segment], ".-", color=color, label=legend if index == 0 else None)
+    finite_loss = arrays["mean_baseline_loss"][np.isfinite(arrays["mean_baseline_loss"])]
+    threshold = max(float(np.median(finite_loss)) * 1e-4, 1e-20) if len(finite_loss) else 1e-20
+    ax.set_yscale("symlog", linthresh=threshold)
     ax.xaxis.set_major_formatter(formatter)
     ax.set(xlabel="Physical LST (hours, continuous ordering)", ylabel=f"Weighted MSE ({units})²",
            title=label + " · withheld-cell prediction on outer time folds")
@@ -120,7 +122,7 @@ def plot_diagnostics(arrays, metadata, directory):
     save(fig, "predictive-loss")
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), layout="constrained")
-    candidates = metadata["candidates"]
+    candidates = metadata.get("candidates", [])
     colors = {"zero": "black", "mean": "gray", "complete": "C0", "masked": "C1", "kernel": "C2"}
     markers = {"linear": "o", "noise_weighted": "s", "signed_asinh": "^", "log_ratio": "x"}
     for index, ax in enumerate(axes.ravel()):
@@ -138,7 +140,7 @@ def plot_diagnostics(arrays, metadata, directory):
         positive = losses[np.isfinite(losses) & (losses > 0)]
         ax.set_yscale("symlog", linthresh=float(np.median(positive)) * 1e-6 if len(positive) else 1e-20)
         ax.set(xlabel="Rank", ylabel="Mean inner time-fold predictive loss", title=f"Outer fold {index + 1}")
-    handles, labels = {}, []
+    handles = {}
     for ax in axes.ravel():
         hs, ls = ax.get_legend_handles_labels()
         handles.update(zip(ls, hs))
