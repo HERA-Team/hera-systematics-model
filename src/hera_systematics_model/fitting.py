@@ -10,7 +10,7 @@ from .splits import feature_partitions
 
 
 def select_final_fit(arrays, window_ids, feature_shape, candidates=None, guard=12,
-                     n_inner=3, axis="delay"):
+                     n_inner=3, axis="delay", training_filter=None):
     """Use inner selection on all available rows, then fit a descriptive model.
 
     Training reconstructions from this model are not out-of-fold predictions.
@@ -33,18 +33,22 @@ def select_final_fit(arrays, window_ids, feature_shape, candidates=None, guard=1
     models = {}
     try:
         selected, losses, inner = select_within(arrays, window_ids, rows, partitions,
-                                                candidates, guard, n_inner)
+                                                candidates, guard, n_inner, training_filter)
         output["inner_losses"] = losses
         metadata["inner"] = inner
         if selected is None:
             raise CandidateFailure(inner["rule"]["reason"])
         candidate = candidates[selected]
         metadata.update(selected=candidate, selected_index=selected, inner=inner)
-        model = fit_candidate(arrays, rows, candidate, np.ones(arrays[0].shape[1], bool), window_ids)
-        prediction, scores = model.predict(*arrays, np.ones(arrays[0].shape[1], bool))
-        target = arrays[3] & np.isfinite(training_mean(arrays[0] - arrays[1], arrays[3]))
+        filtered, filter_report = (arrays, None) if training_filter is None else training_filter(arrays, rows)
+        metadata["training_filter"] = filter_report
+        model = fit_candidate(filtered, rows, candidate, np.ones(arrays[0].shape[1], bool), window_ids)
+        prediction, scores = model.predict(*filtered, np.ones(arrays[0].shape[1], bool))
+        target = filtered[3] & np.isfinite(training_mean(filtered[0] - filtered[1], filtered[3]))
         score = score_predictions(prediction, arrays[0] - arrays[1], arrays[2], target)
         output.update(training_prediction=prediction, training_scores=scores, target=target,
+                      eligible=arrays[3].copy(), excluded=arrays[3] & ~filtered[3],
+                      unavailable=filtered[3] & ~target,
                       modeled=target & model.feature_mask, training_window_loss=score.per_window)
         ranks = [c["rank"] for c in candidates if c["method"] == candidate["method"]
                  and c["representation"] == candidate["representation"]]
@@ -54,5 +58,5 @@ def select_final_fit(arrays, window_ids, feature_shape, candidates=None, guard=1
                         rank_ceiling_selected=inner["rule"]["rank_ceiling_selected"])
         models["descriptive"] = [model]
     except (CandidateFailure, np.linalg.LinAlgError) as error:
-        metadata.update(status="candidate_failure", reason=str(error))
+        metadata.update(status="candidate_failure", reason=str(error), diagnostics=getattr(error, "diagnostics", {}))
     return Evaluation(output, metadata, models)

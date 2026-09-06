@@ -19,7 +19,7 @@ def run_analysis(args):
     arrays, shape, identity = analysis_view(samples, config.group, config.delay)
     function = evaluate_nested if args.command == "evaluate" else select_final_fit
     result = function(arrays, samples.window_ids, shape, config.candidates(), guard=config.guard,
-                      axis="group" if config.delay is not None else "delay")
+                      axis="group" if config.delay is not None else "delay", training_filter=config.training_filter(samples))
     result.metadata.update(identity=identity, configuration=config.as_dict(),
         configuration_digest=digest_json(config.as_dict()), runtime=capture_runtime(),
         input=file_identity(args.samples), input_metadata=file_identity(Path(args.samples).with_suffix(".json")))

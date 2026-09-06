@@ -5,6 +5,7 @@ from hera_systematics_model.evaluation import evaluate_nested, select_within
 from hera_systematics_model.prediction import candidate_grid
 from hera_systematics_model.sensitivity import GroupExclusion
 from hera_systematics_model.splits import feature_partitions, time_folds
+from hera_systematics_model.fitting import select_final_fit
 from test_evaluation import series
 
 
@@ -40,3 +41,14 @@ def test_sensitivity_keeps_original_coverage_denominators():
     for report in result.metadata["folds"]:
         assert report["eligible_cells"] == report["scored_cells"] + report["excluded_cells"]
         assert len(report["inner"]["training_filters"]) == 3
+
+
+def test_descriptive_exclusion_is_selected_by_inner_training_partitions():
+    exclusion = GroupExclusion((5, 6), tuple("abcde"), 1)
+    result = select_final_fit(series(), np.arange(100), (5, 6),
+        candidate_grid(2, False, ["linear"], ["complete"]), guard=3, training_filter=exclusion)
+    assert result.metadata["complete"]
+    assert len(result.metadata["inner"]["training_filters"]) == 3
+    assert result.metadata["training_filter"]["training_rows"] == list(range(100))
+    np.testing.assert_array_equal(result.arrays["target"] | result.arrays["excluded"] | result.arrays["unavailable"],
+                                  result.arrays["eligible"])

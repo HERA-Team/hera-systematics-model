@@ -27,6 +27,7 @@ class AnalysisConfig:
     methods: list = field(default_factory=lambda: ["complete", "masked"])
     group: int | None = None
     delay: int | None = None
+    group_exclusion: str | None = None
 
     def __post_init__(self):
         if type(self.guard) is not int or self.guard not in (8, 12, 16):
@@ -44,6 +45,10 @@ class AnalysisConfig:
                 raise ValueError("slice indices must be nonnegative integers")
         if self.group is not None and self.delay is not None:
             raise ValueError("only one slice direction may be selected")
+        if self.group_exclusion not in (None, "leading_linear_loading", "noise_weighted_energy"):
+            raise ValueError("unsupported group exclusion measure")
+        if self.group_exclusion is not None and (self.group is not None or self.delay is not None):
+            raise ValueError("group exclusions require the full cylindrical plane")
 
     @classmethod
     def load(cls, path):
@@ -56,6 +61,17 @@ class AnalysisConfig:
 
     def candidates(self):
         return candidate_grid(self.max_rank, self.include_kernel, self.representations, self.methods)
+
+    def training_filter(self, samples):
+        if self.group_exclusion is None:
+            return None
+        from .sensitivity import GroupExclusion
+
+        counts = {6: 3, 7: 1}
+        if samples.metadata["spw"] not in counts:
+            raise ValueError("group exclusions are defined only for spectral windows 6 and 7")
+        return GroupExclusion(samples.corrupted.shape[1:], tuple(samples.group_ids),
+                              counts[samples.metadata["spw"]], self.group_exclusion)
 
 
 def file_identity(path):
