@@ -34,3 +34,16 @@ def test_final_insufficient_support_cannot_be_reported_as_fit():
     result = select_final_fit(arrays, np.arange(10), (1, 30), guard=12)
     assert not result.metadata["complete"]
     assert not result.models
+
+
+def test_predictor_support_ceiling_is_reported_below_configured_maximum():
+    rng = np.random.default_rng(920)
+    power = rng.normal(size=(100, 15)) @ rng.normal(size=(15, 27))
+    arrays = power, np.zeros_like(power), np.ones_like(power), np.ones(power.shape, bool)
+    result = select_final_fit(arrays, np.arange(100), (1, 27),
+        candidate_grid(20, False, ["linear"], ["complete"]), guard=3)
+    assert result.metadata["complete"]
+    assert result.metadata["selected"]["rank"] == 15
+    assert result.metadata["configured_rank_ceiling"] == 20
+    assert result.metadata["structural_rank_ceiling"] == 15
+    assert result.metadata["rank_ceiling_selected"]

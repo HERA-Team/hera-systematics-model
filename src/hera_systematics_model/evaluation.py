@@ -12,6 +12,29 @@ from .scoring import CandidateFailure, choose_simplest
 from .splits import feature_partitions, time_folds
 
 
+def structural_rank_ceiling(valid, folds, partitions, candidate, candidates):
+    """Bound rank by physical splits and observed predictor counts, not EVR."""
+    if candidate["rank"] == 0:
+        return 0
+    maximum = max(c["rank"] for c in candidates if c["method"] == candidate["method"]
+                  and c["representation"] == candidate["representation"])
+    for rank in range(maximum, 0, -1):
+        supported = True
+        for fold in folds:
+            if not fold.supported or len(fold.train) < rank + 2:
+                supported = False
+                break
+            counts = valid[fold.train].sum(axis=0)
+            features = counts >= rank + 2 if candidate["method"] == "masked" else counts == len(fold.train)
+            for partition in partitions:
+                if partition.target.any() and np.any((valid[fold.test] & features & partition.predictor).sum(axis=1) < rank + 2):
+                    supported = False
+                    break
+        if supported:
+            return rank
+    return 0
+
+
 def select_within(arrays, window_ids, pool, partitions, candidates, guard=12, n_splits=3):
     """Choose a candidate using only rows in the supplied training pool."""
     folds = time_folds(window_ids, n_splits=n_splits, guard=guard, pool=pool)
@@ -33,6 +56,10 @@ def select_within(arrays, window_ids, pool, partitions, candidates, guard=12, n_
         selected, rule = choose_simplest(candidates, losses)
     except CandidateFailure as error:
         selected, rule = None, {"reason": str(error)}
+    if selected is not None:
+        ceiling = structural_rank_ceiling(arrays[3], folds, partitions, candidates[selected], candidates)
+        rule.update(structural_rank_ceiling=ceiling,
+                    rank_ceiling_selected=bool(candidates[selected]["rank"] > 0 and candidates[selected]["rank"] >= ceiling))
     return selected, losses, {"rule": rule, "failures": failures,
         "folds": [{"train_window_ids": window_ids[fold.train].tolist(),
                    "test_window_ids": window_ids[fold.test].tolist(),

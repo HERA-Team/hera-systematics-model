@@ -50,7 +50,8 @@ def select_final_fit(arrays, window_ids, feature_shape, candidates=None, guard=1
                  and c["representation"] == candidate["representation"]]
         metadata.update(complete=True, status="fitted", training_loss=score.mean,
                         configured_rank_ceiling=max(ranks),
-                        rank_ceiling_selected=bool(candidate["rank"] > 0 and candidate["rank"] == max(ranks)))
+                        structural_rank_ceiling=inner["rule"]["structural_rank_ceiling"],
+                        rank_ceiling_selected=inner["rule"]["rank_ceiling_selected"])
         models["descriptive"] = [model]
     except (CandidateFailure, np.linalg.LinAlgError) as error:
         metadata.update(status="candidate_failure", reason=str(error))
