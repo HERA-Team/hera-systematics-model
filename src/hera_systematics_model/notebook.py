@@ -37,20 +37,33 @@ def notebook_parameters(notebook, configuration, single_baseline, output_dir):
 def execute_spectrum(notebook, configuration, single_baseline, output_dir):
     """Execute with this interpreter; errors propagate to the compute worker."""
     import papermill
+    import nbformat
 
     output_dir = Path(output_dir).resolve()
     parameters = notebook_parameters(notebook, configuration, single_baseline, output_dir)
+    document = nbformat.read(notebook, as_version=4)
+    modules = ["numpy", "scipy", "astropy", "h5py", "pyuvdata", "hera_cal", "hera_pspec",
+               "hera_filters", "hera_qm", "hera_notebook_templates"]
+    instrumentation = ("from hera_systematics_model.configuration import capture_imports\n"
+        "from hera_systematics_model.production import write_json_exclusive\n"
+        "from pathlib import Path\n"
+        f"write_json_exclusive(Path({str(output_dir / 'import-runtime.json')!r}), capture_imports({modules!r}))\n")
+    document.cells.append(nbformat.v4.new_code_cell(instrumentation))
+    instrumented = output_dir / "instrumented.ipynb"
+    with instrumented.open("x") as stream:
+        nbformat.write(document, stream)
     kernel_root = output_dir / "jupyter"
     kernel = kernel_root / "kernels" / "hsm-worker"
     kernel.mkdir(parents=True, exist_ok=False)
     write_json_exclusive(kernel / "kernel.json", {"argv": [sys.executable, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
         "display_name": "Spectrum worker", "language": "python"})
     write_json_exclusive(output_dir / "execution.json", {"parameters": parameters,
-        "notebook": file_identity(notebook), "single_baseline": file_identity(single_baseline), "python": sys.executable})
+        "notebook": file_identity(notebook), "instrumented_notebook": file_identity(instrumented),
+        "single_baseline": file_identity(single_baseline), "python": sys.executable})
     previous = os.environ.get("JUPYTER_PATH")
     os.environ["JUPYTER_PATH"] = str(kernel_root) + (os.pathsep + previous if previous else "")
     try:
-        papermill.execute_notebook(str(notebook), str(output_dir / "spectrum.ipynb"), parameters=parameters,
+        papermill.execute_notebook(str(instrumented), str(output_dir / "spectrum.ipynb"), parameters=parameters,
             kernel_name="hsm-worker", cwd=str(output_dir), progress_bar=False, log_output=True)
     finally:
         if previous is None:

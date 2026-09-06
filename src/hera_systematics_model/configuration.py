@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass, field
 import hashlib
+import importlib
 import importlib.metadata
 import json
 from pathlib import Path
@@ -75,3 +76,15 @@ def capture_runtime():
         runtime["git_commit"] = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
         runtime["git_status"] = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True).splitlines()
     return runtime
+
+
+def capture_imports(names):
+    """Record actually imported module versions and paths, including shadowing."""
+    result = {}
+    for name in names:
+        module = importlib.import_module(name)
+        path = getattr(module, "__file__", None)
+        result[name] = {"version": str(getattr(module, "__version__", "unavailable")),
+                        "imported_file": file_identity(path) if path else None,
+                        "file_unavailable_reason": None if path else "module has no source file"}
+    return {"runtime": capture_runtime(), "imports": result}
