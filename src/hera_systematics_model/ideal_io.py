@@ -27,10 +27,26 @@ def redundant_baseline_map(reference, source):
                                             match_conj_to_set=False, include_conj_only_if_missing=True)
         if len(matches) > 1:
             raise ValueError("ambiguous redundant source baseline")
+        mapped = tuple(next(iter(matches))) if matches else None
+        stored = mapped if mapped in available else mapped[::-1] if mapped is not None else None
+        if stored is not None and stored not in available:
+            raise ValueError("mapped source baseline is unavailable in either orientation")
         result[baseline_key(pair)] = {"reference_pair": [int(value) for value in pair],
-            "source_pair": [int(value) for value in next(iter(matches))] if matches else None,
+            "source_pair": list(map(int, mapped)) if mapped else None,
+            "stored_pair": list(map(int, stored)) if stored else None,
+            "conjugate": mapped != stored,
             "exclusion": None if matches else "source_baseline_absent"}
     return result
+
+
+def source_polarizations(source_pols, reference_pols, conjugate=False):
+    """Reversal conjugates visibility and exchanges the two cross-polarizations."""
+    swap = {-7: -8, -8: -7, -3: -4, -4: -3}
+    available = {int(value): index for index, value in enumerate(source_pols)}
+    requested = [swap.get(int(value), int(value)) if conjugate else int(value) for value in reference_pols]
+    if any(value not in available for value in requested):
+        raise ValueError("source polarization is unavailable")
+    return [available[value] for value in requested]
 
 
 def choose_source_files(inventory, target_lsts, buffer_rad):
@@ -57,7 +73,7 @@ def construct_chunk(reference_file, source_files, mapping, output):
     pairs = reference.get_antpairs()
     if any(baseline_key(pair) not in mapping for pair in pairs):
         raise ValueError("reference baseline absent from deterministic mapping")
-    requested = sorted({tuple(mapping[baseline_key(pair)]["source_pair"]) for pair in pairs
+    requested = sorted({tuple(mapping[baseline_key(pair)]["stored_pair"]) for pair in pairs
                         if mapping[baseline_key(pair)]["source_pair"] is not None})
     if not requested:
         raise ValueError("reference chunk has no supported source baselines")
@@ -67,22 +83,23 @@ def construct_chunk(reference_file, source_files, mapping, output):
     actual = source.get_antpairs()
     if any(pair not in actual for pair in requested):
         raise ValueError("source reader did not preserve requested baseline orientation")
-    source_pol = {int(value): i for i, value in enumerate(source.polarization_array)}
-    if any(int(value) not in source_pol for value in reference.polarization_array):
-        raise ValueError("source polarization is unavailable")
-    pol_indices = [source_pol[int(value)] for value in reference.polarization_array]
     values = np.full(reference.data_array.shape, np.nan + 1j * np.nan, complex)
     supported = np.zeros(values.shape, bool)
     for pair in pairs:
-        mapped = mapping[baseline_key(pair)]["source_pair"]
+        entry = mapping[baseline_key(pair)]
+        mapped = entry["stored_pair"]
         if mapped is None:
             continue
+        pol_indices = source_polarizations(source.polarization_array, reference.polarization_array,
+                                          entry["conjugate"])
         rows = np.flatnonzero((reference.ant_1_array == pair[0]) & (reference.ant_2_array == pair[1]))
         rows = rows[np.argsort(reference.time_array[rows], kind="stable")]
         source_rows = np.flatnonzero((source.ant_1_array == mapped[0]) & (source.ant_2_array == mapped[1]))
         knots, targets, order = periodic_source_order(source.lst_array[source_rows], reference.lst_array[rows])
         source_rows = source_rows[order]
         data = source.data_array[source_rows][:, :, pol_indices]
+        if entry["conjugate"]:
+            data = data.conj()
         counts = source.nsample_array[source_rows][:, :, pol_indices]
         valid = (~source.flag_array[source_rows][:, :, pol_indices] & np.isfinite(counts) & (counts > 0))
         values[rows], supported[rows] = interpolate_supported(knots, data, valid, targets)
