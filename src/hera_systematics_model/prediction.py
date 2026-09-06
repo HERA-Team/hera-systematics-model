@@ -42,6 +42,7 @@ class PredictionResult:
     models: list
     eligible: np.ndarray
     unavailable: np.ndarray
+    inference: list
 
 
 def fit_candidate(arrays, train, candidate, predictor, window_ids, cache=None):
@@ -83,9 +84,9 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
     prediction = np.full(target.shape, np.nan)
     modeled = np.zeros_like(target)
     covered = np.zeros(power.shape[1], dtype=int)
-    models = []
+    models, inference = [], []
     model = None
-    for partition in partitions:
+    for partition_index, partition in enumerate(partitions):
         covered += partition.target
         if not partition.target.any():
             continue
@@ -95,15 +96,34 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
                 models.append(model)
         if candidate["method"] == "zero":
             pred = np.zeros(target.shape)
+            scores, diagnostics = np.zeros((len(test), 0)), []
         elif candidate["method"] == "mean":
             pred = np.broadcast_to(mean, target.shape)
+            scores, diagnostics = np.zeros((len(test), 0)), []
         else:
-            pred, _ = model.predict(*(a[test] for a in arrays), predictor=partition.predictor)
+            diagnostics = [] if keep_models else None
+            pred, scores = model.predict(*(a[test] for a in arrays), predictor=partition.predictor,
+                                         diagnostics=diagnostics)
             modeled[:, partition.target] = model.feature_mask[partition.target] & target[:, partition.target]
+        if keep_models:
+            support = np.zeros(target.shape, bool)
+            ranks = np.zeros(len(test), int)
+            conditions = np.full(len(test), np.nan)
+            for row in diagnostics:
+                support[row["row"], row["predictor_features"]] = True
+                ranks[row["row"]] = row["effective_rank"]
+                conditions[row["row"]] = row["condition_number"]
+            inference.append({"scores": scores, "predictor_support": support,
+                "effective_rank": ranks, "condition_number": conditions,
+                "partition_index": partition_index, "model_index": len(models) - 1,
+                "type": "kernel_embedding" if candidate["method"] == "kernel" else "linear_coefficients",
+                "condition_definition": "retained training kernel eigenvalue ratio" if candidate["method"] == "kernel"
+                                        else "observed predictor design singular value ratio",
+                "condition_unavailable_reason": "no coefficient solve for rank zero" if candidate["rank"] == 0 else None})
         prediction[:, partition.target] = pred[:, partition.target]
     if not np.all(covered == 1):
         raise ValueError("feature partitions must cover each target exactly once")
     loss = score_predictions(prediction, (power - ideal)[test], pn[test], target)
     zero_only = target & (candidate["method"] == "zero")
     return PredictionResult(prediction, target, modeled, target & ~modeled & ~zero_only,
-                            zero_only, loss, models, valid[test].copy(), valid[test] & ~target)
+                            zero_only, loss, models, valid[test].copy(), valid[test] & ~target, inference)

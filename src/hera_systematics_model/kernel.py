@@ -45,7 +45,7 @@ class KernelModel:
     def rank(self):
         return self.metadata["rank"]
 
-    def predict(self, power, ideal, pn, valid, predictor):
+    def predict(self, power, ideal, pn, valid, predictor, diagnostics=None):
         if not self.metadata.get("converged", False):
             raise CandidateFailure("kernel model did not converge")
         power, ideal, pn, valid = measured_arrays(power, ideal, pn, valid)
@@ -63,6 +63,11 @@ class KernelModel:
         matrix = rbf(inputs, self.training_inputs, self.metadata["gamma"])
         centered = matrix - matrix.mean(axis=1, keepdims=True) - self.kernel_mean + self.kernel_mean.mean()
         scores = centered @ (self.eigenvectors / np.sqrt(self.eigenvalues))
+        if diagnostics is not None:
+            for row in range(len(power)):
+                diagnostics.append({"row": row, "predictor_features": np.flatnonzero(self.input_mask).tolist(),
+                    "effective_rank": self.rank, "condition_number": float(self.eigenvalues[0] / self.eigenvalues[-1]),
+                    "condition_definition": "retained training kernel eigenvalue ratio"})
         decoded = rbf(scores, self.training_scores, self.metadata["decoder_gamma"]) @ self.dual
         decoded = decoded * self.metadata["target_scale"] + self.mean[self.feature_mask]
         predictions = np.broadcast_to(self.linear_mean, power.shape).copy()
@@ -134,7 +139,8 @@ def fit_kernel(power, ideal, pn, valid, rank, predictor, representation="linear"
     if scores.shape[1] != rank or np.any(encoder.eigenvalues_ <= 0):
         raise CandidateFailure("kernel embedding has insufficient rank")
     decoder_gamma = median_distance_gamma(scores)
-    dual = np.linalg.solve(rbf(scores, scores, decoder_gamma) + alpha * np.eye(len(x)), targets)
+    decoder_system = rbf(scores, scores, decoder_gamma) + alpha * np.eye(len(x))
+    dual = np.linalg.solve(decoder_system, targets)
     ids = np.arange(len(x)) if training_ids is None else np.asarray(training_ids)
     if ids.shape != (len(x),) or len(np.unique(ids)) != len(ids):
         raise ValueError("invalid training identities")
@@ -143,4 +149,6 @@ def fit_kernel(power, ideal, pn, valid, rank, predictor, representation="linear"
         {"method": "kernel", "representation": representation, "params": params, "rank": rank,
          "bandwidth": bandwidth, "alpha": alpha, "gamma": gamma, "decoder_gamma": decoder_gamma,
          "kernel_definition": "exp(-squared_distance / (bandwidth * training_median_squared_distance))",
+         "encoder_retained_eigenvalue_ratio": float(encoder.eigenvalues_[0] / encoder.eigenvalues_[-1]),
+         "decoder_regularized_condition": float(np.linalg.cond(decoder_system)),
          "input_scale": input_scale, "target_scale": target_scale, "converged": True})

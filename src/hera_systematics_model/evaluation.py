@@ -136,6 +136,14 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
                 output[name][fold.test] = getattr(result, name)
             output["window_loss"][fold.test] = result.loss.per_window
             models[fi] = result.models
+            report["inference"] = []
+            for index, entry in enumerate(result.inference):
+                prefix = f"inference_{fi}_{index}"
+                names = ("scores", "predictor_support", "effective_rank", "condition_number")
+                for name in names:
+                    output[f"{prefix}_{name}"] = entry[name]
+                report["inference"].append({**{key: value for key, value in entry.items() if key not in names},
+                                            "array_prefix": prefix})
             for baseline in ("zero", "mean"):
                 reference = predict_partitioned(arrays, window_ids, fold.train, fold.test, partitions,
                     {"method": baseline, "rank": 0, "representation": "linear"})
