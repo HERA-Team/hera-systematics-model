@@ -13,7 +13,7 @@ dependencies = ["numpy>=1.26,<3", "scipy>=1.14,<2"]
 io = ["h5py>=3.10", "hera-pspec>=0.4", "pyuvdata>=3", "astropy>=6", "papermill>=2.6"]
 kernel = ["scikit-learn>=1.5,<2"]
 plot = ["matplotlib>=3.8", "astropy>=6"]
-dev = ["pytest>=8,<9", "build>=1.2"]
+dev = ["pytest>=8,<9", "build>=1.2", "h5py>=3.12"]
 
 [project.scripts]
 hera-systematics = "hera_systematics_model.cli:main"
