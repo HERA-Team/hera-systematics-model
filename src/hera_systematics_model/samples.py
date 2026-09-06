@@ -95,10 +95,14 @@ class PairedSamples:
         if not isinstance(self.metadata, dict) or not required.issubset(self.metadata):
             raise ValueError("missing physical or source metadata")
         canonical_json(self.metadata)
-        if (not isinstance(self.metadata["spw"], int) or self.metadata["spw"] < 0
+        if (type(self.metadata["spw"]) is not int or self.metadata["spw"] < 0
                 or self.metadata["window_seconds"] <= 0
-                or not self.metadata["sources"]):
+                or not self.metadata["sources"] or not self.metadata["cosmology"]
+                or any(not isinstance(self.metadata[k], str) or not self.metadata[k].strip()
+                       for k in ("polarization", "power_units", "noise_model"))):
             raise ValueError("invalid spectral window, time grid or sources")
+        if np.any(np.diff(self.baseline_length_m) < 0) or np.any(np.diff(self.kperp) < 0):
+            raise ValueError("baseline groups must be ordered by physical length")
         centers = (self.metadata["window_anchor_jd"]
                    + (self.window_ids + 0.5) * self.metadata["window_seconds"] / 86400)
         if not np.allclose(centers, self.time_jd, rtol=0, atol=1e-9):

@@ -47,7 +47,7 @@ def score_predictions(prediction, truth, pn, target):
     if not np.isfinite(losses[counts > 0]).all():
         raise CandidateFailure("nonfinite weighted loss")
     if not (counts > 0).any():
-        raise ValueError("no eligible target cells")
+        raise CandidateFailure("no eligible target cells")
     return Score(losses, counts, float(np.mean(losses[counts > 0])))
 
 

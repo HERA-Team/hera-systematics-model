@@ -53,7 +53,8 @@ class SpectrumRecords:
         nr, nd = self.power.shape
         if self.pn.shape != (nr, nd) or self.valid.shape != (nr, nd):
             raise ValueError("power, noise and validity shapes disagree")
-        if self.valid.dtype.kind != "b" or not np.isfinite(self.power[self.valid]).all():
+        if (self.valid.dtype.kind != "b" or self.power.dtype.kind not in "fiu"
+                or self.pn.dtype.kind not in "fiu" or not np.isfinite(self.power[self.valid]).all()):
             raise ValueError("invalid measured power or validity")
         for name in ("window_ids", "baseline_ids", "group_ids", "time_jd", "lst_rad",
                      "baseline_length_m", "kperp"):
@@ -81,6 +82,11 @@ class SpectrumRecords:
         if not required.issubset(self.metadata):
             raise ValueError("missing record metadata")
         canonical_json(self.metadata)
+        if (type(self.metadata["spw"]) is not int or self.metadata["spw"] < 0
+                or not self.metadata["sources"] or not self.metadata["cosmology"]
+                or any(not isinstance(self.metadata[k], str) or not self.metadata[k].strip()
+                       for k in ("polarization", "power_units"))):
+            raise ValueError("invalid physical record metadata")
         grid = WindowGrid(self.metadata["window_anchor_jd"], self.metadata["window_seconds"])
         if not np.array_equal(grid.assign(self.time_jd), self.window_ids):
             raise ValueError("time centroids disagree with reference window identities")

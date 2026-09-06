@@ -43,10 +43,10 @@ def select_final_fit(arrays, window_ids, feature_shape, candidates=None, guard=1
         score = score_predictions(prediction, arrays[0] - arrays[1], arrays[2], target)
         output.update(training_prediction=prediction, training_scores=scores, target=target,
                       modeled=target & model.feature_mask, training_window_loss=score.per_window)
-        valid_candidates = np.isfinite(losses).all(axis=1)
-        ranks = [c["rank"] for c, usable in zip(candidates, valid_candidates) if usable
-                 and c["method"] == candidate["method"] and c["representation"] == candidate["representation"]]
+        ranks = [c["rank"] for c in candidates if c["method"] == candidate["method"]
+                 and c["representation"] == candidate["representation"]]
         metadata.update(complete=True, status="fitted", training_loss=score.mean,
+                        configured_rank_ceiling=max(ranks),
                         rank_ceiling_selected=bool(candidate["rank"] > 0 and candidate["rank"] == max(ranks)))
         models["descriptive"] = [model]
     except (CandidateFailure, np.linalg.LinAlgError) as error:

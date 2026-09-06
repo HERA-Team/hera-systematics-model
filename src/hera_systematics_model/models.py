@@ -10,6 +10,8 @@ from .scoring import CandidateFailure, training_mean
 
 
 def measured_arrays(power, ideal, pn, valid):
+    if any(np.asarray(x).dtype.kind not in "fiu" for x in (power, ideal, pn)):
+        raise ValueError("real numerical power and noise arrays required")
     power, ideal, pn = (np.asarray(x, dtype=float) for x in (power, ideal, pn))
     valid = np.asarray(valid)
     if (power.ndim != 2 or any(x.shape != power.shape for x in (ideal, pn, valid))
@@ -101,8 +103,26 @@ class LinearModel:
         if metadata.get("method") not in ("complete", "masked"):
             raise ValueError("not a linear residual model")
         model = cls(**arrays, metadata=metadata)
-        if model.components.shape[1] != len(model.mean) or not 0 <= model.rank <= len(model.components):
+        nf = len(model.mean)
+        if (model.mean.ndim != 1 or model.components.ndim != 2 or model.components.shape[1] != nf
+                or type(model.rank) is not int or not 0 <= model.rank <= len(model.components)
+                or model.feature_mask.shape != (nf,) or model.feature_mask.dtype.kind != "b"
+                or model.linear_mean.shape != (nf,)
+                or model.training_ids.ndim != 1 or model.training_ids.dtype.kind not in "iu"
+                or len(np.unique(model.training_ids)) != len(model.training_ids)
+                or model.singular_values.ndim != 1 or len(model.singular_values) != len(model.components)
+                or model.explained_variance_ratio.ndim != 1
+                or len(model.explained_variance_ratio) not in (0, len(model.components))):
             raise ValueError("invalid fitted model dimensions")
+        if (metadata.get("representation") not in TRANSFORMS or not isinstance(metadata.get("params"), dict)
+                or not isinstance(metadata.get("converged"), bool)
+                or not np.isfinite(model.mean).all() or not np.isfinite(model.components).all()
+                or not np.isfinite(model.linear_mean[model.feature_mask]).all()
+                or not np.isfinite(model.singular_values).all() or np.any(model.singular_values < 0)
+                or not np.isfinite(model.explained_variance_ratio).all()
+                or np.any(model.explained_variance_ratio < 0)
+                or np.any(model.components[:, ~model.feature_mask] != 0)):
+            raise ValueError("invalid fitted model numerical state")
         return model
 
 

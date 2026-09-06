@@ -14,6 +14,7 @@ def test_descriptive_fit_has_distinct_statistics_and_round_trip(tmp_path):
     assert result.metadata["selected"]["rank"] == 2
     assert result.metadata["purpose"] == "descriptive_fit"
     assert not result.metadata["performance_estimator"]
+    assert not result.metadata["rank_ceiling_selected"]
     assert "window_loss" not in result.arrays
     assert result.metadata["training_loss"] < 1e-20
     result.save(tmp_path / "fit.npz")
