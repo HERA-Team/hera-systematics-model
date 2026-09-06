@@ -1,0 +1,74 @@
+"""Execute a captured spectral notebook with explicit output and kernel paths."""
+
+import argparse
+import ast
+import json
+import os
+from pathlib import Path
+import sys
+
+from .configuration import file_identity
+from .production import write_json_exclusive
+
+
+def notebook_parameters(notebook, configuration, single_baseline, output_dir):
+    """Validate overrides against the captured parameter cell."""
+    document = json.loads(Path(notebook).read_text())
+    cells = [cell for cell in document["cells"] if "parameters" in cell.get("metadata", {}).get("tags", [])]
+    if len(cells) != 1:
+        raise ValueError("exactly one tagged parameter cell required")
+    names = set()
+    for node in ast.parse("".join(cells[0]["source"])).body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+    if not set(configuration) <= names:
+        raise ValueError("configuration contains unknown notebook parameters")
+    output_dir = Path(output_dir).resolve()
+    parameters = {**configuration, "SINGLE_BL_FILE": str(Path(single_baseline).resolve()),
+                  "OUT_PSPEC_FILE": str(output_dir / "spectrum.pspec.h5"),
+                  "OUT_TAVG_PSPEC_FILE": str(output_dir / "spectrum.tavg.pspec.h5")}
+    if not set(parameters) <= names or not parameters.get("SAVE_RESULTS", True):
+        raise ValueError("notebook cannot write the required spectral products")
+    return parameters
+
+
+def execute_spectrum(notebook, configuration, single_baseline, output_dir):
+    """Execute with this interpreter; errors propagate to the compute worker."""
+    import papermill
+
+    output_dir = Path(output_dir).resolve()
+    parameters = notebook_parameters(notebook, configuration, single_baseline, output_dir)
+    kernel_root = output_dir / "jupyter"
+    kernel = kernel_root / "kernels" / "hsm-worker"
+    kernel.mkdir(parents=True, exist_ok=False)
+    write_json_exclusive(kernel / "kernel.json", {"argv": [sys.executable, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+        "display_name": "Spectrum worker", "language": "python"})
+    write_json_exclusive(output_dir / "execution.json", {"parameters": parameters,
+        "notebook": file_identity(notebook), "single_baseline": file_identity(single_baseline), "python": sys.executable})
+    previous = os.environ.get("JUPYTER_PATH")
+    os.environ["JUPYTER_PATH"] = str(kernel_root) + (os.pathsep + previous if previous else "")
+    try:
+        papermill.execute_notebook(str(notebook), str(output_dir / "spectrum.ipynb"), parameters=parameters,
+            kernel_name="hsm-worker", cwd=str(output_dir), progress_bar=False, log_output=True)
+    finally:
+        if previous is None:
+            os.environ.pop("JUPYTER_PATH", None)
+        else:
+            os.environ["JUPYTER_PATH"] = previous
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run one captured spectral notebook")
+    parser.add_argument("--notebook", required=True)
+    parser.add_argument("--configuration", required=True)
+    parser.add_argument("--single-baseline", required=True)
+    parser.add_argument("--output-dir", required=True)
+    args = parser.parse_args(argv)
+    execute_spectrum(args.notebook, json.loads(Path(args.configuration).read_text()), args.single_baseline, args.output_dir)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
