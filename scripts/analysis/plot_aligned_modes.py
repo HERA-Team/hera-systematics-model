@@ -41,6 +41,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
+from matplotlib.ticker import FuncFormatter
 
 from cylindrical import NU21_HZ, cylindrical_coords, redshift_from_kpara_ratio
 
@@ -103,6 +104,19 @@ def mesh(ax, kperp, kpara, image, norm=None, cmap="RdBu_r", **kw):
     return pc
 
 
+def mean_colorbar_label(whiten):
+    """Units of the mean map, which depend on how the run was whitened.
+
+    Scaling divides input power by recorded effective noise. These dimensionless
+    coordinates do not establish that a component is signal or noise.
+    """
+    if whiten == "pn-cell":
+        return r"mean $P / P_N$  (per-cell whitened)"
+    if whiten == "pn-median":
+        return r"mean $P\,/\,\mathrm{median}_t P_N$  (whitened)"
+    return r"mK$^2$ $h^{-3}$ Mpc$^3$"
+
+
 def plot_spw(fn, spw, args, report):
     z_npz = np.load(fn)
     cube_shape = z_npz["cube_shape"]
@@ -130,11 +144,15 @@ def plot_spw(fn, spw, args, report):
     kpara = np.asarray(kparas, float)
     above = float(np.mean(kpara[None, :] > slope * kperp[:, None]))
 
+    whiten = str(z_npz["whiten"]) if "whiten" in z_npz.files else "none"
     mean_map = z_npz["mean"].reshape(n_groups, n_dly)
     comps = z_npz["components"].reshape(-1, n_groups, n_dly)
     evr = z_npz["explained_variance_ratio"]
     scores = z_npz["scores"]
-    lst_hours = np.asarray(z_npz["lst_grid"], float) * 12.0 / np.pi
+    order = np.argsort(z_npz["time_grid"], kind="stable")
+    if np.any(np.diff(z_npz["time_grid"][order]) <= 0):
+        raise ValueError("unique physical times required for score plots")
+    lst_hours = np.unwrap(np.asarray(z_npz["lst_grid"], float)[order]) * 12.0 / np.pi
 
     report.append({
         "spw": spw, "redshift": round(float(zred), 4),
@@ -143,6 +161,7 @@ def plot_spw(fn, spw, args, report):
         "kperp_source": kperp_source,
         "kperp_min": float(kperp.min()), "kperp_max": float(kperp.max()),
         "kpara_min": float(kpara.min()), "kpara_max": float(kpara.max()),
+        "whiten": whiten,
         "wedge_slope": round(float(slope), 4),
         "fraction_cells_above_wedge": round(above, 4),
         "n_components_for_threshold": int(z_npz["n_for_threshold"][0]),
@@ -164,7 +183,7 @@ def plot_spw(fn, spw, args, report):
                               vmax=np.nanmax(np.abs(mean_map))))
     draw_wedge(ax, kperp, slope, ratio)
     ax.set_title(f"mean  (symlog, linthresh={linthresh:.1e})")
-    figa.colorbar(pc, ax=ax, label=r"mK$^2$ $h^{-3}$ Mpc$^3$")
+    figa.colorbar(pc, ax=ax, label=mean_colorbar_label(whiten))
     ax.legend(loc="lower right", fontsize=7)
 
     for i in range(n_modes):
@@ -188,7 +207,8 @@ def plot_spw(fn, spw, args, report):
     figa.suptitle(
         f"{args.label}  spw {spw}   z = {zred:.2f}   "
         f"nu = {NU21_HZ / (1 + zred) / 1e6:.1f} MHz   "
-        f"wedge slope {slope:.2f}   {above:.0%} of cells above horizon",
+        f"wedge slope {slope:.2f}   {above:.0%} of cells above horizon"
+        + (f"   whitening: {whiten}" if whiten != "none" else ""),
         fontsize=11)
     figa.tight_layout(rect=(0, 0, 1, 0.97))
     fna = os.path.join(args.outdir, f"{args.label}.modes.spw{spw:02d}.png")
@@ -206,14 +226,14 @@ def plot_spw(fn, spw, args, report):
     axs.legend(fontsize=8)
     axs.grid(alpha=0.3)
 
-    order = np.argsort(lst_hours)
     for i in range(n_modes):
         s = scores[:, i]
-        axl.plot(lst_hours[order], s[order] / (np.abs(s).max() or 1.0),
-                 "o-", ms=3, lw=1, label=f"mode {i}")
-    axl.set_xlabel("LST [hours]")
+        axl.plot(lst_hours, s[order] / (np.abs(s).max() or 1.0),
+                 "o", ms=3, label=f"mode {i + 1}")
+    axl.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value % 24:g}"))
+    axl.set_xlabel("Physical LST [hours, continuous order]")
     axl.set_ylabel("score (normalised)")
-    axl.set_title("scores against LST — smooth trend implies sky, not instrument")
+    axl.set_title("Descriptive scores against LST; no causal attribution")
     axl.legend(fontsize=8)
     axl.grid(alpha=0.3)
     figb.suptitle(f"{args.label}  spw {spw}   z = {zred:.2f}", fontsize=11)
