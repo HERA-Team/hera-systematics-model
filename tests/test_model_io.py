@@ -27,7 +27,12 @@ def test_evaluation_saves_all_prediction_state_and_checks_metadata_hash(tmp_path
     path = tmp_path / "evaluation.npz"
     result.save(path)
     restored = Evaluation.load(path)
-    assert len(restored.models) == 4
+    assert set(restored.models) == {str(i) for i in range(4)} | {f"projection-{i}" for i in range(4)}
+    for fold in range(4):
+        rows = np.flatnonzero(restored.arrays["outer_fold"] == fold)
+        projected, _ = restored.models[f"projection-{fold}"][0].predict(
+            *(array[rows] for array in series()), np.ones(30, bool))
+        np.testing.assert_allclose(projected, restored.arrays["projection_prediction"][rows])
     for key, models in result.models.items():
         np.testing.assert_equal(models[0].components, restored.models[str(key)][0].components)
     entry = restored.metadata["models"]["0"][0]

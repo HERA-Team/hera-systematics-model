@@ -119,6 +119,33 @@ def plot_diagnostics(arrays, metadata, directory):
     ax.legend()
     save(fig, "predictive-loss")
 
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), layout="constrained")
+    candidates = metadata["candidates"]
+    colors = {"zero": "black", "mean": "gray", "complete": "C0", "masked": "C1", "kernel": "C2"}
+    markers = {"linear": "o", "noise_weighted": "s", "signed_asinh": "^", "log_ratio": "x"}
+    for index, ax in enumerate(axes.ravel()):
+        losses = arrays.get(f"inner_losses_{index}")
+        if losses is None:
+            ax.text(.5, .5, "Insufficient time support", ha="center", transform=ax.transAxes)
+            continue
+        finite = np.isfinite(losses).all(axis=1)
+        for method, color in colors.items():
+            for representation, marker in markers.items():
+                use = [i for i, c in enumerate(candidates) if c["method"] == method and c["representation"] == representation and finite[i]]
+                if use:
+                    ax.scatter([candidates[i]["rank"] for i in use], losses[use].mean(axis=1),
+                               c=color, marker=marker, alpha=.45, s=16, label=f"{method} / {representation}")
+        positive = losses[np.isfinite(losses) & (losses > 0)]
+        ax.set_yscale("symlog", linthresh=float(np.median(positive)) * 1e-6 if len(positive) else 1e-20)
+        ax.set(xlabel="Rank", ylabel="Mean inner time-fold predictive loss", title=f"Outer fold {index + 1}")
+    handles, labels = {}, []
+    for ax in axes.ravel():
+        hs, ls = ax.get_legend_handles_labels()
+        handles.update(zip(ls, hs))
+    fig.legend(handles.values(), handles.keys(), loc="outside lower center", ncol=3, fontsize=8)
+    fig.suptitle(label + " · candidate losses; each point is one configuration")
+    save(fig, "rank-selection")
+
     fig, ax = plt.subplots(figsize=(11, 4), layout="constrained")
     eligible = arrays["eligible"].sum(axis=1)
     for name in ("modeled", "mean_only", "zero_only", "unavailable", "excluded"):

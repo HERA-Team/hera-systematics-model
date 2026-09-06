@@ -50,6 +50,16 @@ def test_noise_only_does_not_require_extra_modes():
                                   | result.arrays["zero_only"], result.arrays["target"])
 
 
+def test_projection_diagnostic_is_separate_from_withheld_cell_prediction():
+    candidates = [{"method": "complete", "rank": 2, "representation": "linear"}]
+    result = evaluate_nested(series(True), np.arange(100), (1, 30), candidates, guard=3)
+    assert result.metadata["complete"]
+    assert np.mean(result.arrays["projection_window_loss"]) < np.mean(result.arrays["window_loss"])
+    for fold in result.metadata["folds"]:
+        assert fold["projection_diagnostic"]["uses_target_values_for_inference"]
+        assert not fold["projection_diagnostic"]["used_for_selection"]
+
+
 def test_insufficient_time_support_is_not_reported_as_complete():
     arrays = tuple(a[:10] for a in series())
     result = evaluate_nested(arrays, np.arange(10), (1, 30), guard=12)

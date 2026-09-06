@@ -50,6 +50,7 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
               "scores": descriptive.arrays["training_scores"].copy(),
               "prediction": evaluation.arrays["prediction"].copy(),
               "window_loss": evaluation.arrays["window_loss"].copy(),
+              "projection_window_loss": evaluation.arrays["projection_window_loss"].copy(),
               "zero_baseline_loss": evaluation.arrays["zero_baseline_loss"].copy(),
               "mean_baseline_loss": evaluation.arrays["mean_baseline_loss"].copy()}
     with warnings.catch_warnings():
@@ -81,7 +82,8 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
     for name in (key for key in evaluation.arrays if key.startswith("inner_losses_")):
         output[name] = evaluation.arrays[name].copy()
     metadata = {"identity": identity, "purpose": "residual_diagnostics", "selected": descriptive.metadata["selected"],
-        "evaluation_complete": evaluation.metadata["complete"], "modes": modes, "score_diagnostics": score_report,
+        "evaluation_complete": evaluation.metadata["complete"], "candidates": evaluation.metadata["candidates"],
+        "modes": modes, "score_diagnostics": score_report,
         "baseline_inventory": baseline_inventory(samples), "regions": regions, "folds": evaluation.metadata["folds"],
         "noise_assumption": samples.metadata["noise_model"], "horizon_definition": "baseline group length divided by speed of light",
         "horizon_buffer_ns": 500., "scores_source": "full-data descriptive fit",

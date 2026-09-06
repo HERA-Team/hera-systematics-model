@@ -7,8 +7,8 @@ import numpy as np
 
 from .artifacts import read_artifact, write_artifact
 from .model_io import load_model_collection, save_model_collection
-from .prediction import candidate_grid, predict_partitioned
-from .scoring import CandidateFailure, choose_simplest
+from .prediction import candidate_grid, fit_candidate, predict_partitioned
+from .scoring import CandidateFailure, choose_simplest, score_predictions
 from .splits import feature_partitions, time_folds
 
 
@@ -119,6 +119,8 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
               "eligible": arrays[3].copy(), "unavailable": arrays[3].copy(),
               "window_loss": np.full(shape[0], np.nan), "outer_fold": np.full(shape[0], -1),
               "mean_baseline_loss": np.full(shape[0], np.nan),
+              "projection_prediction": np.full(shape, np.nan),
+              "projection_window_loss": np.full(shape[0], np.nan),
               "zero_baseline_loss": np.full(shape[0], np.nan), "window_ids": window_ids.copy(),
               "feature_targets": np.stack([p.target for p in partitions]),
               "feature_predictors": np.stack([p.predictor for p in partitions]),
@@ -167,6 +169,20 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
                           excluded_cells=int(output["excluded"][fold.test].sum()), unavailable_cells=int(result.unavailable.sum()),
                           modeled_cells=int(result.modeled.sum()), mean_only_cells=int(result.mean_only.sum()),
                           zero_only_cells=int(result.zero_only.sum()))
+            # This reconstruction may use target values; it never selects a candidate.
+            try:
+                predictor = np.ones(shape[1], bool)
+                projection_model = fit_candidate(filtered, fold.train, candidates[selected], predictor, window_ids)
+                projected, _ = projection_model.predict(*(a[fold.test] for a in filtered), predictor)
+                projection_loss = score_predictions(projected, (arrays[0] - arrays[1])[fold.test],
+                                                    arrays[2][fold.test], result.target)
+                output["projection_prediction"][fold.test] = projected
+                output["projection_window_loss"][fold.test] = projection_loss.per_window
+                models[f"projection-{fi}"] = [projection_model]
+                report["projection_diagnostic"] = {"available": True, "loss": projection_loss.mean,
+                    "uses_target_values_for_inference": True, "used_for_selection": False}
+            except (CandidateFailure, np.linalg.LinAlgError) as error:
+                report["projection_diagnostic"] = {"available": False, "reason": str(error), "used_for_selection": False}
         except (CandidateFailure, np.linalg.LinAlgError) as error:
             report.update(status="candidate_failure", reason=str(error),
                           diagnostics=getattr(error, "diagnostics", {}))
