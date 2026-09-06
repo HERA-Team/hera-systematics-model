@@ -36,6 +36,7 @@ class PredictionResult:
     target: np.ndarray
     modeled: np.ndarray
     mean_only: np.ndarray
+    zero_only: np.ndarray
     loss: object
     models: list
 
@@ -100,4 +101,6 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
     if not np.all(covered == 1):
         raise ValueError("feature partitions must cover each target exactly once")
     loss = score_predictions(prediction, (power - ideal)[test], pn[test], target)
-    return PredictionResult(prediction, target, modeled, target & ~modeled, loss, models)
+    zero_only = target & (candidate["method"] == "zero")
+    return PredictionResult(prediction, target, modeled, target & ~modeled & ~zero_only,
+                            zero_only, loss, models)
