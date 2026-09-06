@@ -35,6 +35,9 @@ def select_final_fit(arrays, window_ids, feature_shape, candidates=None, guard=1
         selected, losses, inner = select_within(arrays, window_ids, rows, partitions,
                                                 candidates, guard, n_inner)
         output["inner_losses"] = losses
+        metadata["inner"] = inner
+        if selected is None:
+            raise CandidateFailure(inner["rule"]["reason"])
         candidate = candidates[selected]
         metadata.update(selected=candidate, selected_index=selected, inner=inner)
         model = fit_candidate(arrays, rows, candidate, np.ones(arrays[0].shape[1], bool), window_ids)

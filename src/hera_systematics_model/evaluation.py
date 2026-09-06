@@ -29,7 +29,10 @@ def select_within(arrays, window_ids, pool, partitions, candidates, guard=12, n_
                 losses[ci, fi] = result.loss.mean
             except (CandidateFailure, np.linalg.LinAlgError) as error:
                 failures.append({"fold": fi, "candidate": ci, "reason": str(error)})
-    selected, rule = choose_simplest(candidates, losses)
+    try:
+        selected, rule = choose_simplest(candidates, losses)
+    except CandidateFailure as error:
+        selected, rule = None, {"reason": str(error)}
     return selected, losses, {"rule": rule, "failures": failures,
         "folds": [{"train_window_ids": window_ids[fold.train].tolist(),
                    "test_window_ids": window_ids[fold.test].tolist(),
@@ -74,6 +77,7 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
     output = {"prediction": np.full(shape, np.nan), "target": np.zeros(shape, bool),
               "modeled": np.zeros(shape, bool), "mean_only": np.zeros(shape, bool),
               "zero_only": np.zeros(shape, bool),
+              "eligible": arrays[3].copy(), "unavailable": arrays[3].copy(),
               "window_loss": np.full(shape[0], np.nan), "outer_fold": np.full(shape[0], -1),
               "mean_baseline_loss": np.full(shape[0], np.nan),
               "zero_baseline_loss": np.full(shape[0], np.nan), "window_ids": window_ids.copy(),
@@ -94,10 +98,13 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
             selected, losses, inner = select_within(arrays, window_ids, fold.train, partitions,
                                                     candidates, guard=guard, n_splits=n_inner)
             output[f"inner_losses_{fi}"] = losses
-            report.update(selected=candidates[selected], selected_index=selected, inner=inner)
+            report.update(selected=candidates[selected] if selected is not None else None,
+                          selected_index=selected, inner=inner)
+            if selected is None:
+                raise CandidateFailure(inner["rule"]["reason"])
             result = predict_partitioned(arrays, window_ids, fold.train, fold.test, partitions,
                                          candidates[selected], keep_models=True)
-            for name in ("prediction", "target", "modeled", "mean_only", "zero_only"):
+            for name in ("prediction", "target", "modeled", "mean_only", "zero_only", "eligible", "unavailable"):
                 output[name][fold.test] = getattr(result, name)
             output["window_loss"][fold.test] = result.loss.per_window
             models[fi] = result.models
@@ -106,6 +113,7 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
                     {"method": baseline, "rank": 0, "representation": "linear"})
                 output[f"{baseline}_baseline_loss"][fold.test] = reference.loss.per_window
             report.update(status="evaluated", loss=result.loss.mean, scored_cells=int(result.target.sum()),
+                          eligible_cells=int(result.eligible.sum()), unavailable_cells=int(result.unavailable.sum()),
                           modeled_cells=int(result.modeled.sum()), mean_only_cells=int(result.mean_only.sum()),
                           zero_only_cells=int(result.zero_only.sum()))
         except (CandidateFailure, np.linalg.LinAlgError) as error:

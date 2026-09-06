@@ -55,3 +55,27 @@ def test_insufficient_time_support_is_not_reported_as_complete():
     result = evaluate_nested(arrays, np.arange(10), (1, 30), guard=12)
     assert not result.metadata["complete"]
     assert all(fold["status"] == "insufficient_support" for fold in result.metadata["folds"])
+
+
+def test_training_unsupported_cells_remain_in_coverage_denominator():
+    arrays = list(series())
+    arrays[3][:, -1] = False
+    arrays[3][:25, -1] = True
+    result = evaluate_nested(arrays, np.arange(100), (1, 30),
+        [{"method": "mean", "representation": "linear", "rank": 0}], guard=3)
+    assert result.metadata["complete"]
+    assert result.arrays["eligible"][:25, -1].all()
+    assert result.arrays["unavailable"][:25, -1].all()
+    assert not result.arrays["target"][:25, -1].any()
+    np.testing.assert_array_equal(result.arrays["target"] | result.arrays["unavailable"], result.arrays["eligible"])
+
+
+def test_failed_selection_preserves_inner_partitions_and_candidate_losses():
+    arrays = series()
+    candidate = [{"method": "complete", "representation": "linear", "rank": 20}]
+    result = evaluate_nested(arrays, np.arange(100), (1, 30), candidate, guard=3)
+    assert not result.metadata["complete"]
+    for index, fold in enumerate(result.metadata["folds"]):
+        assert len(fold["inner"]["folds"]) == 3
+        assert len(fold["inner"]["failures"]) == 3
+        assert np.isnan(result.arrays[f"inner_losses_{index}"]).all()

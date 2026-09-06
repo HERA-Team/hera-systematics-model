@@ -40,6 +40,8 @@ class PredictionResult:
     zero_only: np.ndarray
     loss: object
     models: list
+    eligible: np.ndarray
+    unavailable: np.ndarray
 
 
 def fit_candidate(arrays, train, candidate, predictor, window_ids, cache=None):
@@ -104,4 +106,4 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
     loss = score_predictions(prediction, (power - ideal)[test], pn[test], target)
     zero_only = target & (candidate["method"] == "zero")
     return PredictionResult(prediction, target, modeled, target & ~modeled & ~zero_only,
-                            zero_only, loss, models)
+                            zero_only, loss, models, valid[test].copy(), valid[test] & ~target)
