@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 SCHEMA_VERSION = 1
-KINDS = {"paired-samples", "fitted-model", "evaluation", "spectrum-records"}
+KINDS = {"paired-samples", "fitted-model", "evaluation", "spectrum-records", "diagnostics"}
 
 
 def sha256_file(path):

@@ -52,7 +52,8 @@ def run_verify(args):
     path = Path(args.artifact)
     kind = json.loads(path.with_suffix(".json").read_text()).get("kind")
     loaders = {"paired-samples": PairedSamples.load, "spectrum-records": SpectrumRecords.load,
-               "fitted-model": load_model, "evaluation": Evaluation.load}
+               "fitted-model": load_model, "evaluation": Evaluation.load,
+               "diagnostics": lambda p: read_artifact(p, "diagnostics")}
     if kind not in loaders:
         raise ValueError("unsupported artifact kind")
     product = loaders[kind](path)
@@ -69,6 +70,8 @@ def main(argv=None):
     )
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command")
+    from .diagnostic_cli import add_commands
+    add_commands(commands)
     pair = commands.add_parser("pair", help="Join and fold two spectrum-record artifacts")
     pair.add_argument("--corrupted", required=True)
     pair.add_argument("--ideal", required=True)
