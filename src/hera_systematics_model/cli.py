@@ -72,6 +72,8 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command")
     from .diagnostic_cli import add_commands
     add_commands(commands)
+    from .production_cli import add_commands as add_production
+    add_production(commands)
     pair = commands.add_parser("pair", help="Join and fold two spectrum-record artifacts")
     pair.add_argument("--corrupted", required=True)
     pair.add_argument("--ideal", required=True)
