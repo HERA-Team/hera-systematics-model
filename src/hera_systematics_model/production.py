@@ -88,6 +88,12 @@ def validate_task(task):
         raise ValueError("invalid task definition")
     if not task["command"] or any(not isinstance(x, str) or not x for x in task["command"]):
         raise ValueError("task needs an explicit command argument vector")
+    command = task["command"]
+    if len(command) >= 3 and command[1] == "-c" and re.match(r"python(?:[0-9]+(?:\.[0-9]+)?)?\Z", Path(command[0]).name):
+        try:
+            compile(command[2], "compute-task", "exec")
+        except SyntaxError as error:
+            raise ValueError(f"invalid Python task script at line {error.lineno}: {error.msg}") from error
     if not isinstance(task["environment"], dict) or any(not isinstance(v, str) for v in task["environment"].values()):
         raise ValueError("task environment must contain strings")
     Resources(**task["resources"])

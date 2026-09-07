@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from hera_systematics_model.production import Resources, create_run, define_task, read_run, require_storage, retained_bytes
+from hera_systematics_model.production import Resources, create_run, define_task, read_run, require_storage, retained_bytes, validate_task
 
 
 def task():
@@ -45,3 +45,13 @@ def test_storage_includes_contingency_without_counting_shared_targets(tmp_path):
 def test_task_resources_cannot_exceed_aggregate_bounds(kwargs):
     with pytest.raises(ValueError):
         Resources(**kwargs)
+
+
+def test_python_commands_are_compiled_before_task_definition(tmp_path):
+    run = create_run(tmp_path / "runs", "a" * 40, {}, [])
+    definition = {**task(), "command": ["/usr/bin/python3.12", "-c", "value = 'first\nsecond'"]}
+    with pytest.raises(ValueError, match="invalid Python task script"):
+        define_task(run, definition)
+    assert not (run / "tasks/baseline-1.json").exists()
+    definition["command"][-1] = "value = 'first' + chr(10) + 'second'"
+    assert validate_task(definition) == definition
