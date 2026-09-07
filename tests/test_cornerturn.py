@@ -106,3 +106,29 @@ def test_cornerturn_rejects_different_physical_feed_orientations(tmp_path):
     with pytest.raises(ValueError, match="feed orientations differ"):
         cornerturn_baselines(inputs, [(0, 1)], output)
     assert not output.exists()
+
+
+def test_buffered_cornerturn_matches_single_row_writes(tmp_path):
+    import h5py
+
+    times = 2459000. + np.arange(10) * 10 / 86400
+    inputs = []
+    for block in range(5):
+        data = visibility(times[block * 2:block * 2 + 2], pairs=((0, 1), (0, 2)))
+        data.data_array[:] = (block + 1) * (1 + 2j)
+        data.data_array[:, 0, 0] = 0
+        data.flag_array[0, 1, 0] = True
+        data.nsample_array[0, 1, 0] = 0
+        path = tmp_path / f"chunk-{block}.uvh5"
+        data.write_uvh5(path)
+        inputs.append(path)
+    reference = cornerturn_baselines(inputs, [(0, 1), (0, 2)], tmp_path / "single", write_buffer_rows=1)
+    buffered = cornerturn_baselines(inputs[::-1], [(0, 2), (0, 1)], tmp_path / "buffered", write_buffer_rows=4)
+    for original, changed in zip(reference["products"], buffered["products"]):
+        assert original["write_buffer"]["write_calls"] == 10
+        assert changed["write_buffer"] == {"row_limit": 4, "maximum_buffered_rows": 4, "write_calls": 3}
+        assert original["valid_cells"] == changed["valid_cells"]
+        with h5py.File(original["output"]["path"]) as a, h5py.File(changed["output"]["path"]) as b:
+            for name in ["Data/visdata", "Data/flags", "Data/nsamples", "Header/time_array", "Header/lst_array",
+                         "Header/uvw_array", "Header/ant_1_array", "Header/ant_2_array", "Header/x_orientation"]:
+                np.testing.assert_equal(a[name][()], b[name][()])

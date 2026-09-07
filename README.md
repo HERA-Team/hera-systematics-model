@@ -133,6 +133,14 @@ streaming data. Its receipt includes `feed_metadata`; a mixed-orientation input
 set fails before output creation. Existing input files are unchanged, and new
 cornerturned files require no separate compatibility copy.
 
+`cornerturn --write-buffer-rows 32` bounds pending payload rows per baseline
+and combines their HDF5 writes in physical output-index order. The default is
+32 rows; one row can be selected for comparison. Every flushed payload is read
+back and compared before its rows count as written. Receipts record the row
+limit, maximum pending row count, and write-call count. Pending payload memory
+scales with baseline count, row limit, frequency count, polarization count, and
+the combined data/flag/count element sizes; include it in the job reservation.
+
 The notebook runner also normalizes repeated label metadata immediately after
 the final full-time average. This operation requires a single physical row
 and identical integer label indices along the remaining interleave axis.

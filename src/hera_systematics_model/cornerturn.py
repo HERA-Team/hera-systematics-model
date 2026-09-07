@@ -6,19 +6,39 @@ import numpy as np
 
 from .configuration import file_identity
 from .production import write_json_exclusive
+from .row_buffer import RowBuffer
 from .visibility_inventory import inventory_visibilities
 
 
-def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
+def _write_rows(writer, indices, arrays):
+    import h5py
+
+    if np.any(writer["written"][indices]):
+        raise ValueError("duplicate cornerturn output write")
+    writer["metadata"].write_uvh5_part(writer["output"], data_array=arrays["visdata"],
+        flag_array=arrays["flags"], nsample_array=arrays["nsamples"], blt_inds=indices,
+        check_header=writer["first"])
+    with h5py.File(writer["output"], "r") as handle:
+        for key, expected in arrays.items():
+            if not np.array_equal(handle["Data"][key][indices], expected, equal_nan=True):
+                raise ValueError("cornerturn changed numerical samples")
+    writer["first"] = False
+    writer["written"][indices] = True
+
+
+def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve", write_buffer_rows=32):
     """Write each physical row once and verify data, flags and counts after writing.
 
     Metadata for the full time span stays in memory. Only one visibility chunk
-    is loaded at a time. Output ownership is exclusive to this invocation.
+    is loaded at a time, with bounded pending rows per output baseline.
+    Output ownership is exclusive to this invocation.
     """
     import h5py
     from pyuvdata import UVData
     from .visibility_compatibility import add_legacy_orientation, legacy_orientation
 
+    if type(write_buffer_rows) is not int or write_buffer_rows < 1:
+        raise ValueError("a positive integer write-buffer row limit is required")
     if uvw_policy not in ("preserve", "recalculate_unprojected"):
         raise ValueError("unsupported cornerturn UVW policy")
     baselines = [tuple(pair) for pair in baselines]
@@ -48,7 +68,7 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
     output_dir.mkdir(exist_ok=False, parents=True)
     manifest = output_dir / "cornerturn-inputs.json"
     write_json_exclusive(manifest, {"schema_version": 1, "inputs": identities, "baseline_pairs": baselines,
-                                    "uvw_policy": uvw_policy})
+                                    "uvw_policy": uvw_policy, "write_buffer_rows": write_buffer_rows})
     manifest_identity = file_identity(manifest)
     parts = [UVData.from_file(path, read_data=False) for path in files]
     full = parts[0]
@@ -82,8 +102,11 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
             if feed_metadata["x_orientation"] != orientations[0]:
                 raise ValueError("cornerturn changed physical feed orientation")
         writers[pair] = {"metadata": metadata, "output": output, "positions": {key: i for i, key in enumerate(keys)},
-                         "written": np.zeros(len(keys), bool), "valid_cells": 0, "first": True,
+                         "written": np.zeros(len(keys), bool), "seen": np.zeros(len(keys), bool), "valid_cells": 0, "first": True,
                          "original_uvws": original_uvws, "geometry": geometry, "feed_metadata": feed_metadata}
+        writer = writers[pair]
+        writer["buffer"] = RowBuffer(write_buffer_rows,
+            lambda indices, arrays, writer=writer: _write_rows(writer, indices, arrays))
     del full
     for entry in entries:
         available_here = {tuple(pair) for pair in inventory["baseline_inventories"][entry["baseline_inventory"]]}
@@ -104,7 +127,7 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
             rows = rows[np.argsort(header["time_array"][rows], kind="stable")]
             writer = writers[pair]
             indices = np.array([writer["positions"][(float(header["time_array"][row]), *pair)] for row in rows])
-            if not len(rows) or np.any(writer["written"][indices]):
+            if not len(rows) or np.any(writer["seen"][indices]):
                 raise ValueError("missing or duplicate cornerturn row")
             metadata = writer["metadata"]
             for name in ("time_array", "lst_array", "integration_time", "uvw_array"):
@@ -115,20 +138,14 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
                 if not np.array_equal(header[name].ravel(), getattr(metadata, name).ravel()):
                     raise ValueError("cornerturn spectral metadata mismatch")
             arrays = {name: values[local_rows[rows]] for name, values in payload.items()}
-            metadata.write_uvh5_part(writer["output"], data_array=arrays["visdata"],
-                flag_array=arrays["flags"], nsample_array=arrays["nsamples"], blt_inds=indices,
-                check_header=writer["first"])
-            with h5py.File(writer["output"], "r") as handle:
-                for key, expected in arrays.items():
-                    if not np.array_equal(handle["Data"][key][indices], expected, equal_nan=True):
-                        raise ValueError("cornerturn changed numerical samples")
-            writer["first"] = False
-            writer["written"][indices] = True
+            writer["buffer"].append(indices, arrays)
+            writer["seen"][indices] = True
             writer["valid_cells"] += int((np.isfinite(arrays["visdata"]) & ~arrays["flags"]
                                           & np.isfinite(arrays["nsamples"]) & (arrays["nsamples"] > 0)).sum())
         del payload
     products = []
     for pair, writer in writers.items():
+        writer["buffer"].flush()
         if not writer["written"].all():
             raise ValueError("cornerturn left unwritten physical rows")
         metadata = UVData.from_file(writer["output"], read_data=False)
@@ -142,7 +159,10 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
         result = {"schema_version": 1, "output": file_identity(writer["output"]), "inputs": manifest_identity,
                   "baseline_pair": list(pair), "rows": len(writer["written"]), "valid_cells": writer["valid_cells"],
                   "all_rows_written": True, "numerical_samples_preserved": True, "geometry": writer["geometry"],
-                  "feed_metadata": writer["feed_metadata"]}
+                  "feed_metadata": writer["feed_metadata"],
+                  "write_buffer": {"row_limit": write_buffer_rows,
+                                   "maximum_buffered_rows": writer["buffer"].maximum_buffered_rows,
+                                   "write_calls": writer["buffer"].write_calls}}
         write_json_exclusive(writer["output"].with_suffix(".json"), result)
         products.append(result)
     for before in identities:
