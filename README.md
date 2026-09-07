@@ -109,6 +109,12 @@ native row identifiers, actual interleave centroids and resulting spectrum
 centroids to `window-memberships.npz`. A merged export must cover each source
 exactly and is rebound to the merged spectrum's verified file identity.
 
+Single-window reads preserve the source SPW identifier even when the HERA
+reader renumbers its selected window to zero. Frequency and delay coordinates
+must agree exactly with that source window before any payload is extracted.
+Records retain `frequency_hz` and `reader_spw_index`; paired branches must have
+matching recorded frequencies, while their internal reader indices may differ.
+
 The notebook runner also normalizes repeated label metadata immediately after
 the final full-time average. This operation requires a single physical row
 and identical integer label indices along the remaining interleave axis.
