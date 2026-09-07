@@ -115,6 +115,18 @@ must agree exactly with that source window before any payload is extracted.
 Records retain `frequency_hz` and `reader_spw_index`; paired branches must have
 matching recorded frequencies, while their internal reader indices may differ.
 
+For UVH5 files written with per-antenna `feed_array` and `feed_angle`,
+`visibility_compatibility.copy_for_legacy_reader(source, output)` creates an
+exclusive compatibility copy with the derived `Header/x_orientation` field.
+It accepts only a common east or north linear-feed orientation within 1e-6
+radians and rejects conflicts with an existing legacy field. Every original
+dataset is compared in bounded slices; visibility values, flags, sample counts,
+and coordinates are unchanged. The `.compatibility.json` sidecar records input
+and output hashes, the added field, and the verified dataset names. The source
+file remains read-only. Retained copies count toward the storage reservation.
+The spectral notebook requires an autocorrelation file in the same directory;
+its feed metadata must be compatible as well.
+
 The notebook runner also normalizes repeated label metadata immediately after
 the final full-time average. This operation requires a single physical row
 and identical integer label indices along the remaining interleave axis.

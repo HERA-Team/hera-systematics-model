@@ -48,4 +48,4 @@ jobs:
           python-version: '3.10'
       - run: python -m pip install 'numpy==1.26.4' 'scipy==1.14.0' 'astropy==6.1.2' 'h5py==3.12.1' 'pyuvdata==3.2.0' 'pytest==8.3.5'
       - run: python -m pip install --no-deps -e .
-      - run: python -m pytest -q tests/test_ideal_uvh5.py tests/test_cornerturn.py tests/test_visibility_cli.py tests/test_ideal_batch.py
+      - run: python -m pytest -q tests/test_ideal_uvh5.py tests/test_cornerturn.py tests/test_visibility_cli.py tests/test_ideal_batch.py tests/test_visibility_compatibility.py
