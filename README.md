@@ -199,3 +199,5 @@ python scripts/analysis/plot_aligned_modes.py --pca-dir <dir> --label sum --outd
 
 See `scripts/analysis/README.md` for what each script does and what is in
 the output files.
+
+Bootstrap stability reads the saved fit configuration, including a fixed cylindrical slice and geometric region. Data-dependent group exclusions are recomputed using each bootstrap draw, with repeated rows retaining their sampling multiplicity. Artifacts record reference and replicate feature support and exclusion measurements. The source sample identities must match the descriptive fit.

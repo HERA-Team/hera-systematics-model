@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from .artifacts import read_artifact, write_artifact
-from .configuration import capture_runtime, file_identity
+from .configuration import AnalysisConfig, capture_runtime, file_identity
 from .evaluation import Evaluation
 from .samples import PairedSamples
 from .views import analysis_view
@@ -33,15 +33,19 @@ def run_stability(args):
 
     samples = PairedSamples.load(args.samples)
     fit = Evaluation.load(args.fit)
-    arrays, _, identity = analysis_view(samples)
+    config = AnalysisConfig(**fit.metadata["configuration"])
+    arrays, _, identity = analysis_view(samples, config.group, config.delay)
     if (fit.metadata.get("purpose") != "descriptive_fit" or not fit.metadata.get("complete")
+            or fit.metadata.get("input") != file_identity(args.samples)
+            or fit.metadata.get("input_metadata") != file_identity(Path(args.samples).with_suffix(".json"))
             or fit.metadata.get("identity") != identity
             or not np.array_equal(fit.arrays["window_ids"], samples.window_ids)):
         raise ValueError("stability inputs must match a complete descriptive fit")
     output, metadata = bootstrap_stability(arrays, samples.window_ids, fit.metadata["selected"],
-        n_replicates=args.replicates, block_length=args.block_length, seed=args.seed)
+        n_replicates=args.replicates, block_length=args.block_length, seed=args.seed,
+        training_filter=config.training_filter(samples))
     output["window_ids"] = samples.window_ids.copy()
-    metadata.update(identity=identity, purpose="block_stability", runtime=capture_runtime(),
+    metadata.update(identity=identity, configuration=config.as_dict(), purpose="block_stability", runtime=capture_runtime(),
                     inputs=input_identities([args.samples, args.fit]))
     write_artifact(args.output, "diagnostics", output, metadata)
     print(json.dumps({"output": str(Path(args.output).resolve()), "complete": metadata["complete"]}))

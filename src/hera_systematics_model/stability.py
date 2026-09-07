@@ -89,7 +89,7 @@ def spectral_clusters(energies, rank, relative_gap=.1):
     return clusters, boundary
 
 
-def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_length=12, seed=0):
+def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_length=12, seed=0, training_filter=None):
     """Refit the fixed selected configuration, including training preprocessing."""
     if n_replicates < 1:
         raise ValueError("at least one bootstrap replicate required")
@@ -98,7 +98,10 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
     rng = np.random.default_rng(seed)
     rows = np.arange(len(ids))
     predictors = np.ones(arrays[0].shape[1], bool)
-    reference = fit_candidate(arrays, rows, candidate, predictors, ids)
+    reference_arrays, reference_filter = (arrays, None) if training_filter is None else training_filter(arrays, rows)
+    reference = fit_candidate(reference_arrays, rows, candidate, predictors, ids)
+    if not reference.metadata["converged"]:
+        raise CandidateFailure("reference factorization did not converge")
     rank = candidate["rank"]
     result = {"sample_rows": np.full((n_replicates, len(ids)), -1, int),
               "signed_cosines": np.full((n_replicates, rank), np.nan),
@@ -106,11 +109,13 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
               "assignments": np.full((n_replicates, rank), -1, int),
               "signs": np.full((n_replicates, rank), np.nan),
               "cluster_principal_angles": np.full((n_replicates, rank), np.nan),
-              "common_features": np.zeros(n_replicates, int)}
+              "common_features": np.zeros(n_replicates, int),
+              "reference_feature_mask": reference.feature_mask.copy(),
+              "replicate_feature_masks": np.zeros((n_replicates, len(predictors)), bool)}
     records = []
     kernel = candidate["method"] == "kernel"
     if kernel:
-        _, reference_scores = reference.predict(*arrays, predictors)
+        _, reference_scores = reference.predict(*reference_arrays, predictors)
         ref_components = (reference_scores - reference_scores.mean(axis=0)).T
     else:
         ref_components = reference.components[:rank] if rank else np.empty((0, len(predictors)))
@@ -120,11 +125,13 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
         try:
             sampled, starts, lengths = block_bootstrap_indices(ids, block_length, rng)
             result["sample_rows"][index] = sampled
-            replicate = fit_candidate(tuple(a[sampled] for a in arrays), rows, candidate, predictors, rows)
+            filtered, filter_report = (arrays, None) if training_filter is None else training_filter(arrays, sampled)
+            replicate = fit_candidate(tuple(a[sampled] for a in filtered), rows, candidate, predictors, rows)
+            result["replicate_feature_masks"][index] = replicate.feature_mask
             if not replicate.metadata["converged"]:
                 raise CandidateFailure("bootstrap factorization did not converge")
             if kernel:
-                _, scores = replicate.predict(*arrays, predictors)
+                _, scores = replicate.predict(*filtered, predictors)
                 trial = (scores - scores.mean(axis=0)).T
                 ref_mask = trial_mask = None
             else:
@@ -139,10 +146,13 @@ def bootstrap_stability(arrays, window_ids, candidate, n_replicates=500, block_l
                 subspace = compare_components(ref_components[cluster], trial[compared["assignment"][cluster]], ref_mask, trial_mask)
                 result["cluster_principal_angles"][index, cluster] = subspace["principal_angles"]
             records.append({"replicate": index, "status": "evaluated", "block_start_rows": starts.tolist(),
-                            "block_lengths": lengths.tolist(), "iterations": replicate.metadata.get("iterations")})
+                            "block_lengths": lengths.tolist(), "training_filter": filter_report,
+                            "iterations": replicate.metadata.get("iterations")})
         except (CandidateFailure, np.linalg.LinAlgError) as error:
             records.append({"replicate": index, "status": "unavailable", "reason": str(error)})
     return result, {"candidate": candidate, "replicates": n_replicates, "block_length": block_length,
+        "reference_training_filter": reference_filter,
+        "training_filter_refitted_per_replicate": training_filter is not None,
         "seed": seed, "comparison_space": "scores on original windows" if kernel else "selected representation features",
         "spectral_clusters": clusters, "cluster_relative_energy_gap": .1,
         "cluster_crosses_rank_boundary": boundary,

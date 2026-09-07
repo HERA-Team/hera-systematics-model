@@ -55,3 +55,43 @@ def test_spectral_clusters_report_close_modes_and_unresolved_rank_boundary():
     for energies, rank in [([1, 2], 2), ([1], -1), ([1], 1.5), ([np.nan], 1), ([-1], 1)]:
         with pytest.raises(ValueError, match="spectral energies"):
             spectral_clusters(energies, rank)
+
+
+@pytest.mark.parametrize("method", ["complete", "masked", "kernel"])
+def test_bootstrap_region_ignores_excluded_power(method):
+    from hera_systematics_model.sensitivity import GeometricRegion
+
+    arrays = low_rank_data()
+    mask = np.arange(30) < 20
+    region = GeometricRegion(mask, "horizon")
+    candidate = {"method": method, "representation": "linear", "rank": 2}
+    if method == "kernel":
+        candidate.update(bandwidth=1., alpha=1.)
+    result, meta = bootstrap_stability(arrays, np.arange(40), candidate,
+        n_replicates=2, training_filter=region)
+    changed = tuple(a.copy() for a in arrays)
+    changed[0][:, ~mask] += np.arange(40)[:, None] * 1e12
+    other, other_meta = bootstrap_stability(changed, np.arange(40), candidate,
+        n_replicates=2, training_filter=region)
+    assert meta["complete"] and other_meta["complete"]
+    for key in result:
+        np.testing.assert_allclose(result[key], other[key], atol=1e-7)
+    assert not result["reference_feature_mask"][~mask].any()
+    assert not result["replicate_feature_masks"][:, ~mask].any()
+    assert meta["reference_training_filter"]["region"] == "horizon"
+    assert all(r["training_filter"]["region"] == "horizon" for r in meta["records"])
+
+
+def test_bootstrap_exclusions_use_each_sample_with_repeated_rows():
+    from hera_systematics_model.sensitivity import GroupExclusion
+
+    arrays = low_rank_data()
+    exclusion = GroupExclusion((3, 10), ("a", "b", "c"), 1, "noise_weighted_energy")
+    candidate = {"method": "complete", "representation": "linear", "rank": 2}
+    result, meta = bootstrap_stability(arrays, np.arange(40), candidate,
+        n_replicates=3, training_filter=exclusion)
+    assert meta["complete"]
+    for sampled, record in zip(result["sample_rows"], meta["records"]):
+        expected = exclusion(arrays, sampled)[1]
+        assert record["training_filter"] == expected
+        assert len(np.unique(sampled)) < len(sampled)

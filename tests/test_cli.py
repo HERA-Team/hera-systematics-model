@@ -59,3 +59,32 @@ def test_cli_frozen_guard_binds_samples_and_primary_artifacts(tmp_path, paired):
         main(arguments + ["--selection-from", str(primary), "--output", str(tmp_path / "bad.npz")])
     assert error.value.code == 2
     assert not (tmp_path / "bad.npz").exists()
+
+
+def test_stability_uses_saved_slice_and_rejects_changed_samples(tmp_path, paired):
+    from hera_systematics_model.artifacts import read_artifact
+
+    ids = np.arange(120)
+    expanded = {name: np.repeat(getattr(paired, name)[:1], len(ids), axis=0)
+                for name in ("corrupted", "ideal", "pn", "valid", "weights")}
+    sample = replace(paired, **expanded, window_ids=ids,
+        time_jd=2450000. + (ids + .5) * 270. / 86400., lst_rad=(6.1 + ids * .02) % (2 * np.pi))
+    source, fit, output = (tmp_path / name for name in ("samples.npz", "fit.npz", "stability.npz"))
+    sample.save(source)
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"max_rank": 0, "include_kernel": False, "group": 0}))
+    assert main(["fit", "--samples", str(source), "--config", str(config), "--output", str(fit)]) == 0
+    arguments = ["stability", "--samples", str(source), "--fit", str(fit), "--replicates", "2"]
+    assert main(arguments + ["--output", str(output)]) == 0
+    arrays, metadata = read_artifact(output, "diagnostics")
+    assert metadata["configuration"]["group"] == 0
+    assert len(metadata["identity"]["group_ids"]) == 1
+    assert arrays["replicate_feature_masks"].shape == (2, len(sample.delay_s))
+    changed = replace(sample, corrupted=sample.corrupted + 1)
+    changed_path = tmp_path / "changed.npz"
+    changed.save(changed_path)
+    arguments[2] = str(changed_path)
+    with pytest.raises(SystemExit) as error:
+        main(arguments + ["--output", str(tmp_path / "bad.npz")])
+    assert error.value.code == 2
+    assert not (tmp_path / "bad.npz").exists()
