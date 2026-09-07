@@ -19,8 +19,13 @@ def input_identities(paths):
 def run_diagnostics(args):
     from .diagnostics import residual_diagnostics
 
-    arrays, metadata = residual_diagnostics(PairedSamples.load(args.samples), Evaluation.load(args.fit),
-        Evaluation.load(args.evaluation), args.surrogates, args.seed)
+    samples = PairedSamples.load(args.samples)
+    fit, evaluation = Evaluation.load(args.fit), Evaluation.load(args.evaluation)
+    for artifact in (fit, evaluation):
+        if (artifact.metadata.get("input") != file_identity(args.samples)
+                or artifact.metadata.get("input_metadata") != file_identity(Path(args.samples).with_suffix(".json"))):
+            raise ValueError("diagnostic source samples differ from fitted or evaluated inputs")
+    arrays, metadata = residual_diagnostics(samples, fit, evaluation, args.surrogates, args.seed)
     metadata.update(runtime=capture_runtime(), inputs=input_identities([args.samples, args.fit, args.evaluation]),
                     complete=metadata["evaluation_complete"])
     write_artifact(args.output, "diagnostics", arrays, metadata)

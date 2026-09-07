@@ -27,6 +27,25 @@ def analysis_view(samples, group=None, delay=None):
     return arrays, shape, identity
 
 
+def sample_view(samples, group=None, delay=None):
+    """Select diagnostic coordinates and contributors without changing weights."""
+    from dataclasses import replace
+
+    analysis_view(samples, group, delay)
+    gs = slice(None) if group is None else slice(group, group + 1)
+    ds = slice(None) if delay is None else slice(delay, delay + 1)
+    baselines = np.ones(len(samples.baseline_ids), bool) if group is None else samples.baseline_group == group
+    values = {name: getattr(samples, name)[:, gs, ds].copy()
+              for name in ("corrupted", "ideal", "pn", "valid")}
+    values.update({name: getattr(samples, name)[gs].copy()
+                   for name in ("group_ids", "baseline_length_m", "kperp")})
+    values.update({name: getattr(samples, name)[ds].copy() for name in ("delay_s", "kparallel")})
+    return replace(samples, **values, baseline_ids=samples.baseline_ids[baselines].copy(),
+        baseline_group=(samples.baseline_group[baselines].copy() if group is None
+                        else np.zeros(int(baselines.sum()), int)),
+        weights=samples.weights[:, baselines, ds].copy())
+
+
 def evaluate_slice(samples, representation, group=None, delay=None, max_rank=20, guard=12):
     arrays, shape, identity = analysis_view(samples, group, delay)
     candidates = candidate_grid(max_rank, include_kernel=False, representations=[representation])

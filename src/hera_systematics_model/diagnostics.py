@@ -7,7 +7,8 @@ import numpy as np
 from .baselines import baseline_inventory, mode_localization
 from .scoring import CandidateFailure, score_predictions, training_mean
 from .statistics import score_diagnostics, summary, surrogate_gaussianity
-from .views import analysis_view, geometry_masks
+from .views import analysis_view, geometry_masks, sample_view
+from .configuration import AnalysisConfig
 
 
 def regional_losses(prediction, truth, pn, target, eligible, masks):
@@ -29,6 +30,14 @@ def regional_losses(prediction, truth, pn, target, eligible, masks):
 def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, seed=0):
     """Combine measured maps and descriptive diagnostics without fitting new modes."""
     samples.validate()
+    config = AnalysisConfig(**descriptive.metadata.get("configuration", {}))
+    compared = AnalysisConfig(**evaluation.metadata.get("configuration", {})).as_dict()
+    expected = config.as_dict()
+    compared.pop("guard")
+    expected.pop("guard")
+    if compared != expected:
+        raise ValueError("diagnostic fit and evaluation configurations disagree")
+    samples = sample_view(samples, config.group, config.delay)
     arrays, shape, identity = analysis_view(samples)
     for artifact in (descriptive, evaluation):
         if artifact.metadata.get("identity") != identity:
@@ -93,7 +102,7 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
     regions = regional_losses(output["prediction"], power - ideal, pn, output["target"], output["eligible"], masks)
     for name in (key for key in evaluation.arrays if key.startswith("inner_losses_")):
         output[name] = evaluation.arrays[name].copy()
-    metadata = {"identity": identity, "purpose": "residual_diagnostics", "selected": descriptive.metadata["selected"],
+    metadata = {"identity": identity, "configuration": config.as_dict(), "purpose": "residual_diagnostics", "selected": descriptive.metadata["selected"],
         "evaluation_complete": evaluation.metadata["complete"], "candidates": evaluation.metadata["candidates"],
         "modes": modes, "physical_mode_energy": energy_metadata, "score_diagnostics": score_report,
         "baseline_inventory": baseline_inventory(samples), "regions": regions, "folds": evaluation.metadata["folds"],

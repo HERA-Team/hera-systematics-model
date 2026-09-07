@@ -22,6 +22,11 @@ def plot_diagnostics(arrays, metadata, directory):
     written = []
     identity = metadata["identity"]
     label = f"SPW {identity['spw']} · {identity['polarization']}"
+    config = metadata.get("configuration", {})
+    if config.get("group") is not None:
+        label += f" · group {identity['group_ids'][0]}"
+    if config.get("delay") is not None:
+        label += f" · fixed k∥ {identity['kparallel'][0]:.4g} h Mpc⁻¹"
     units = identity["power_units"]
     shape = arrays["mean_residual"].shape
 
@@ -32,6 +37,15 @@ def plot_diagnostics(arrays, metadata, directory):
         written.append(file_identity(path))
 
     def plane(ax, values, title, norm=None, cmap="viridis"):
+        if min(shape) == 1:
+            along_delay = shape[0] == 1
+            coordinate = arrays["kparallel"] if along_delay else arrays["kperp"]
+            values = np.asarray(values).ravel()
+            ax.plot(coordinate, values, color="0.6", linewidth=.8)
+            artist = ax.scatter(coordinate, values, c=values, cmap=cmap, norm=norm)
+            ax.set(xlabel=(r"$k_\parallel$ ($h$ Mpc$^{-1}$)" if along_delay
+                           else r"$k_\perp$ ($h$ Mpc$^{-1}$)"), ylabel="Value", title=title)
+            return artist
         artist = ax.pcolormesh(arrays["kperp"], arrays["kparallel"], np.asarray(values).T,
                               shading="nearest", cmap=cmap, norm=norm, rasterized=True)
         ax.set(xlabel=r"$k_\perp$ ($h$ Mpc$^{-1}$)", ylabel=r"$k_\parallel$ ($h$ Mpc$^{-1}$)", title=title)

@@ -201,3 +201,5 @@ See `scripts/analysis/README.md` for what each script does and what is in
 the output files.
 
 Bootstrap stability reads the saved fit configuration, including a fixed cylindrical slice and geometric region. Data-dependent group exclusions are recomputed using each bootstrap draw, with repeated rows retaining their sampling multiplicity. Artifacts record reference and replicate feature support and exclusion measurements. The source sample identities must match the descriptive fit.
+
+Per-group and per-delay diagnostic views retain the selected physical coordinates and contributor identities. Their plots use coordinate profiles for a single group or delay; these are cylindrical slices without spherical averaging. Fit and evaluation configurations must agree except for the validation guard, and the source file identities must match both artifacts.
