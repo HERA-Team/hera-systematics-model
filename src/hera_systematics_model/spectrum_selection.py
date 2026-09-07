@@ -3,6 +3,17 @@
 import numpy as np
 
 
+def baseline_pair_identity(code):
+    """Decode the stored pair of six-digit, 100-offset antenna-pair codes."""
+    if not isinstance(code, (int, np.integer)) or code <= 0:
+        raise ValueError("positive integer baseline-pair code required")
+    baselines = [int(code) // 1000000, int(code) % 1000000]
+    pairs = [(value // 1000 - 100, value % 1000 - 100) for value in baselines]
+    if any(not 0 <= antenna < 900 for pair in pairs for antenna in pair):
+        raise ValueError("invalid encoded antenna identity")
+    return ":".join(f"{a}_{b}" for a, b in pairs)
+
+
 class SpectralSelection:
     """Read selected baseline-pair rows and polarization columns without averaging.
 

@@ -4,11 +4,34 @@ from pathlib import Path
 
 import numpy as np
 
-from .artifacts import write_artifact
+from .artifacts import read_artifact, write_artifact
 from .configuration import file_identity
 from .input_verification import VerifiedInputs
 from .parity import exact_equal
 from .spectrum_layout import inspect_spectrum, require_compatible, require_equal
+
+
+def verify_merge_receipt(path):
+    """Verify the numerical sidecar and its bound physical spectrum and input report."""
+    import h5py
+    import json
+
+    arrays, metadata = read_artifact(path, "spectral-merge")
+    if metadata.get("passed") is not True or file_identity(metadata["output"]["path"]) != metadata["output"]:
+        raise ValueError("merged spectrum has no matching verified merge receipt")
+    report_identity = metadata["input_verification"]
+    if file_identity(report_identity["path"]) != report_identity:
+        raise ValueError("merge input verification report changed")
+    report = json.loads(Path(report_identity["path"]).read_text())
+    expected = sorted([{key: item[key] for key in ("path", "bytes", "sha256")} for item in metadata["inputs"]],
+                      key=lambda item: item["path"])
+    if report.get("passed") is not True or report.get("inputs") != expected:
+        raise ValueError("merge input verification is incomplete")
+    with h5py.File(metadata["output"]["path"], "r") as handle:
+        layout = inspect_spectrum(handle[metadata["group"]])
+        if any(layout["counts"][key] != value for key, value in metadata["counts"].items()):
+            raise ValueError("merge receipt dimensions disagree with the spectrum")
+    return arrays, metadata
 
 
 def stream_slices(shape, axis, offset, block_bytes):

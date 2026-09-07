@@ -48,13 +48,15 @@ def run_verify(args):
     from .model_io import load_model
     from .records import SpectrumRecords
     from .samples import PairedSamples
+    from .spectrum_merge import verify_merge_receipt
     from .window_membership import WindowMemberships
 
     path = Path(args.artifact)
     kind = json.loads(path.with_suffix(".json").read_text()).get("kind")
     loaders = {"paired-samples": PairedSamples.load, "spectrum-records": SpectrumRecords.load,
                "fitted-model": load_model, "evaluation": Evaluation.load,
-               "diagnostics": lambda p: read_artifact(p, "diagnostics"), "window-memberships": WindowMemberships.load}
+               "diagnostics": lambda p: read_artifact(p, "diagnostics"), "window-memberships": WindowMemberships.load,
+               "spectral-merge": verify_merge_receipt}
     if kind not in loaders:
         raise ValueError("unsupported artifact kind")
     product = loaders[kind](path)
@@ -77,6 +79,8 @@ def main(argv=None):
     add_production(commands)
     from .visibility_cli import add_commands as add_visibility
     add_visibility(commands)
+    from .spectrum_cli import add_commands as add_spectra
+    add_spectra(commands)
     pair = commands.add_parser("pair", help="Join and fold two spectrum-record artifacts")
     pair.add_argument("--corrupted", required=True)
     pair.add_argument("--ideal", required=True)
