@@ -57,19 +57,29 @@ def mode_localization(samples, components, representation, threshold=.3):
     return result
 
 
-def match_coordinates(left, right, delay_atol=1e-14):
-    """Match physical group identities and native delay centers without interpolation."""
+def match_groups(left, right):
+    """Match declared physical length groups independently of their spectral grid."""
     for name in ("polarization", "power_units", "cosmology"):
         if left.metadata[name] != right.metadata[name]:
             raise ValueError(f"cross-window metadata mismatch: {name}")
     left_groups = {value: i for i, value in enumerate(left.group_ids)}
     right_groups = {value: i for i, value in enumerate(right.group_ids)}
     groups = sorted(left_groups.keys() & right_groups.keys())
-    pairs = []
+    matched = []
     for group in groups:
         li, ri = left_groups[group], right_groups[group]
         if not np.isclose(left.baseline_length_m[li], right.baseline_length_m[ri], rtol=1e-10, atol=1e-8):
             raise ValueError("matched group has different physical geometry")
+        matched.append((li, ri))
+    if not matched:
+        raise ValueError("no matched physical baseline groups")
+    return np.asarray(matched, int)
+
+
+def match_coordinates(left, right, delay_atol=1e-14):
+    """Match physical group identities and native delay centers without interpolation."""
+    pairs = []
+    for li, ri in match_groups(left, right):
         for ld, delay in enumerate(left.delay_s):
             rd = np.flatnonzero(np.isclose(right.delay_s, delay, rtol=1e-10, atol=delay_atol))
             if len(rd) > 1:
@@ -82,6 +92,11 @@ def match_coordinates(left, right, delay_atol=1e-14):
     if len(np.unique(indices[:, 1])) != len(indices):
         raise ValueError("cross-window coordinates are not one-to-one")
     return indices
+
+
+def pairwise_cosine(x, y):
+    denominator = np.linalg.norm(x, axis=1)[:, None] * np.linalg.norm(y, axis=1)[None, :]
+    return np.divide(x @ y.T, denominator, out=np.full(denominator.shape, np.nan), where=denominator > 0)
 
 
 def cross_window_similarity(left, right, left_components, right_components, left_mask, right_mask):
@@ -97,9 +112,6 @@ def cross_window_similarity(left, right, left_components, right_components, left
     a, b = left_components[:, indices[use, 0]], right_components[:, indices[use, 1]]
     if not np.isfinite(a).all() or not np.isfinite(b).all():
         raise ValueError("nonfinite loading on shared support")
-    def cosine(x, y):
-        denominator = np.linalg.norm(x, axis=1)[:, None] * np.linalg.norm(y, axis=1)[None, :]
-        return np.divide(x @ y.T, denominator, out=np.full(denominator.shape, np.nan), where=denominator > 0)
-    return {"signed_similarity": cosine(a, b), "squared_loading_similarity": cosine(a ** 2, b ** 2),
+    return {"signed_similarity": pairwise_cosine(a, b), "squared_loading_similarity": pairwise_cosine(a ** 2, b ** 2),
             "coordinate_indices": indices, "scored_coordinate_mask": use,
             "matched_cells": int(use.sum()), "left_cells": len(left_mask), "right_cells": len(right_mask)}
