@@ -105,7 +105,7 @@ class Evaluation:
 
 
 def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12,
-                    n_outer=4, n_inner=3, axis="delay", training_filter=None):
+                    n_outer=4, n_inner=3, axis="delay", training_filter=None, frozen_choices=None):
     """Freeze each outer choice before evaluating its physical-time block."""
     arrays = tuple(np.asarray(a) for a in arrays)
     window_ids = np.asarray(window_ids)
@@ -113,6 +113,9 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
             or np.prod(feature_shape) != arrays[0].shape[1]):
         raise ValueError("evaluation axes do not match input arrays")
     candidates = candidate_grid() if candidates is None else candidates
+    if frozen_choices is not None and (len(frozen_choices) != n_outer
+            or any(choice not in candidates for choice in frozen_choices)):
+        raise ValueError("one supported frozen configuration per outer fold required")
     partitions = feature_partitions(feature_shape, axis=axis, guard=2 if axis == "delay" else 1)
     outer = time_folds(window_ids, n_splits=n_outer, guard=guard)
     shape = arrays[0].shape
@@ -140,9 +143,14 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
             report.update(status="insufficient_support", reason=fold.reason)
             continue
         try:
-            selected, losses, inner = select_within(arrays, window_ids, fold.train, partitions,
-                                                    candidates, guard=guard, n_splits=n_inner, training_filter=training_filter)
-            output[f"inner_losses_{fi}"] = losses
+            if frozen_choices is None:
+                selected, losses, inner = select_within(arrays, window_ids, fold.train, partitions,
+                    candidates, guard=guard, n_splits=n_inner, training_filter=training_filter)
+                output[f"inner_losses_{fi}"] = losses
+            else:
+                selected = candidates.index(frozen_choices[fi])
+                inner = {"rule": {"selection": "frozen_primary_outer_choice"},
+                         "selection_repeated": False}
             report.update(selected=candidates[selected] if selected is not None else None,
                           selected_index=selected, inner=inner)
             if selected is None:
@@ -191,7 +199,35 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
             report.update(status="candidate_failure", reason=str(error),
                           diagnostics=getattr(error, "diagnostics", {}))
     metadata = {"guard_windows": guard, "outer_folds": n_outer, "inner_folds": n_inner,
+                "selection_mode": "nested" if frozen_choices is None else "frozen_outer_choices",
                 "feature_shape": list(feature_shape), "feature_axis": axis,
                 "candidates": candidates, "folds": reports,
                 "complete": all(r["status"] == "evaluated" for r in reports)}
     return Evaluation(output, metadata, models)
+
+
+def evaluate_guard_sensitivity(primary, arrays, window_ids, guard, training_filter=None):
+    """Refit primary outer choices with a different guard, without reselection."""
+    validate_evaluation(primary.arrays, primary.metadata, primary.models)
+    metadata = primary.metadata
+    if (not metadata["complete"] or metadata.get("purpose") == "descriptive_fit"
+            or metadata.get("selection_mode", "nested") != "nested"
+            or metadata["guard_windows"] != 12 or guard not in (8, 16)):
+        raise ValueError("guard sensitivity needs a complete primary guard-12 evaluation and guard 8 or 16")
+    if (not np.array_equal(primary.arrays["window_ids"], window_ids)
+            or not np.array_equal(primary.arrays["eligible"], arrays[3])):
+        raise ValueError("guard sensitivity physical windows or eligible support differ")
+    choices = [report["selected"] for report in metadata["folds"]]
+    result = evaluate_nested(arrays, window_ids, metadata["feature_shape"], metadata["candidates"],
+        guard=guard, n_outer=metadata["outer_folds"], n_inner=metadata["inner_folds"],
+        axis=metadata["feature_axis"], training_filter=training_filter, frozen_choices=choices)
+    for left, right in zip(metadata["folds"], result.metadata["folds"]):
+        if left["test_window_ids"] != right["test_window_ids"]:
+            raise ValueError("guard change altered target time blocks")
+    for name in ("feature_targets", "feature_predictors", "feature_guards"):
+        if not np.array_equal(primary.arrays[name], result.arrays[name]):
+            raise ValueError("guard change altered feature partitions")
+    result.metadata["primary_selection"] = {"guard_windows": 12, "choices": choices,
+        "target_blocks_unchanged": True, "training_preprocessing_refitted": True,
+        "hyperparameter_selection_repeated": False}
+    return result

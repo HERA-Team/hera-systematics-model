@@ -128,6 +128,12 @@ These fixed masks precede any training-only group exclusion. Evaluation retains
 the original eligible-cell denominator and records geometric exclusions
 separately. Regions without feature support return an explicit failure record.
 
+For guard sensitivity, run `evaluate --selection-from primary.npz` with a
+configuration using guard 8 or 16. The primary evaluation must be complete and
+use guard 12. Sample identities and all other configuration fields must match.
+Outer choices and target partitions remain fixed; preprocessing and model fits
+use the new training support. Both primary artifact hashes are recorded.
+
 Evaluation uses four outer physical-time folds and three inner folds, with
 withheld feature regions for coefficient inference. Final descriptive fits
 use separate inner selection and carry training statistics only. Model

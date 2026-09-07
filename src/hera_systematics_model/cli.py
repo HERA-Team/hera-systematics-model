@@ -9,7 +9,7 @@ from . import __version__
 
 def run_analysis(args):
     from .configuration import AnalysisConfig, capture_runtime, digest_json, file_identity
-    from .evaluation import evaluate_nested
+    from .evaluation import Evaluation, evaluate_guard_sensitivity, evaluate_nested
     from .fitting import select_final_fit
     from .samples import PairedSamples
     from .views import analysis_view
@@ -17,9 +17,25 @@ def run_analysis(args):
     samples = PairedSamples.load(args.samples)
     config = AnalysisConfig.load(args.config) if args.config else AnalysisConfig()
     arrays, shape, identity = analysis_view(samples, config.group, config.delay)
-    function = evaluate_nested if args.command == "evaluate" else select_final_fit
-    result = function(arrays, samples.window_ids, shape, config.candidates(), guard=config.guard,
-                      axis="group" if config.delay is not None else "delay", training_filter=config.training_filter(samples))
+    selection_source = getattr(args, "selection_from", None)
+    if selection_source is not None:
+        primary = Evaluation.load(selection_source)
+        primary_config = AnalysisConfig(**primary.metadata["configuration"]).as_dict()
+        compared_config = config.as_dict()
+        primary_config.pop("guard")
+        compared_config.pop("guard")
+        if (primary_config != compared_config or primary.metadata["identity"] != identity
+                or primary.metadata["input"] != file_identity(args.samples)
+                or primary.metadata["input_metadata"] != file_identity(Path(args.samples).with_suffix(".json"))):
+            raise ValueError("frozen selection requires identical samples, coordinates and configuration except guard")
+        result = evaluate_guard_sensitivity(primary, arrays, samples.window_ids, config.guard,
+                                            training_filter=config.training_filter(samples))
+        result.metadata["selection_input"] = file_identity(selection_source)
+        result.metadata["selection_input_metadata"] = file_identity(Path(selection_source).with_suffix(".json"))
+    else:
+        function = evaluate_nested if args.command == "evaluate" else select_final_fit
+        result = function(arrays, samples.window_ids, shape, config.candidates(), guard=config.guard,
+                          axis="group" if config.delay is not None else "delay", training_filter=config.training_filter(samples))
     result.metadata.update(identity=identity, configuration=config.as_dict(),
         configuration_digest=digest_json(config.as_dict()), runtime=capture_runtime(),
         input=file_identity(args.samples), input_metadata=file_identity(Path(args.samples).with_suffix(".json")))
@@ -91,6 +107,8 @@ def main(argv=None):
         analysis.add_argument("--samples", required=True)
         analysis.add_argument("--config")
         analysis.add_argument("--output", required=True)
+        if name == "evaluate":
+            analysis.add_argument("--selection-from", help="Freeze outer choices from a primary guard-12 evaluation")
         analysis.set_defaults(function=run_analysis)
     verify = commands.add_parser("verify", help="Verify artifact structure, state and hashes")
     verify.add_argument("artifact")
