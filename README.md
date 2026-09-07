@@ -112,8 +112,20 @@ hera-systematics evaluate --samples paired.npz --config analysis.json --output e
 hera-systematics fit --samples paired.npz --config analysis.json --output fit.npz
 hera-systematics diagnostics --samples paired.npz --fit fit.npz --evaluation evaluation.npz --output diagnostics.npz
 hera-systematics plot diagnostics.npz --output-dir figures
+hera-systematics stability --samples paired.npz --fit fit.npz --block-length 12 --replicates 500 --output stability.npz
+hera-systematics plot stability.npz --output-dir stability-figures
+hera-systematics replay --samples paired.npz --evaluation evaluation.npz --output replay.json
+hera-systematics summary --fit fit.npz --evaluation evaluation.npz --output summary.json
 hera-systematics verify evaluation.npz
 ```
+
+Bootstrap stability reads the saved fit configuration, including a fixed cylindrical slice and geometric region. Data-dependent group exclusions are recomputed using each bootstrap draw, with repeated rows retaining their sampling multiplicity. Artifacts record reference and replicate feature support and exclusion measurements. The source sample identities must match the descriptive fit.
+
+Per-group and per-delay diagnostic views retain the selected physical coordinates and contributor identities. Their plots use coordinate profiles for a single group or delay; these are cylindrical slices without spherical averaging. Fit and evaluation configurations must agree except for the validation guard, and the source file identities must match both artifacts.
+
+`hera-systematics summary --fit fit.npz --evaluation evaluation.npz --output summary.json` exports per-fold choices, coverage, equal-fold predictive losses and zero/mean comparisons. Standard errors use physical-time fold scores, not feature partitions. Incomplete fold sets have unavailable aggregate losses; a zero baseline has an unavailable loss ratio. Descriptive training loss is labeled separately. The export contains numerical evidence and does not assign a scientific conclusion.
+
+`hera-systematics plot stability.npz --output-dir stability-figures` renders matched sign agreement, ordered subspace angles, near-degenerate cluster angles and modeled support. Percentiles use evaluated draws; support fractions retain the total requested replicate count, including failed draws. The figure manifest contains numerical summaries and failure records.
 
 An empty configuration object selects all four residual representations,
 complete-feature PCA, masked factorization and the kernel comparison. Optional
@@ -199,9 +211,3 @@ python scripts/analysis/plot_aligned_modes.py --pca-dir <dir> --label sum --outd
 
 See `scripts/analysis/README.md` for what each script does and what is in
 the output files.
-
-Bootstrap stability reads the saved fit configuration, including a fixed cylindrical slice and geometric region. Data-dependent group exclusions are recomputed using each bootstrap draw, with repeated rows retaining their sampling multiplicity. Artifacts record reference and replicate feature support and exclusion measurements. The source sample identities must match the descriptive fit.
-
-Per-group and per-delay diagnostic views retain the selected physical coordinates and contributor identities. Their plots use coordinate profiles for a single group or delay; these are cylindrical slices without spherical averaging. Fit and evaluation configurations must agree except for the validation guard, and the source file identities must match both artifacts.
-
-`hera-systematics summary --fit fit.npz --evaluation evaluation.npz --output summary.json` exports per-fold choices, coverage, equal-fold predictive losses and zero/mean comparisons. Standard errors use physical-time fold scores, not feature partitions. Incomplete fold sets have unavailable aggregate losses; a zero baseline has an unavailable loss ratio. Descriptive training loss is labeled separately. The export contains numerical evidence and does not assign a scientific conclusion.
