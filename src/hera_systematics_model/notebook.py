@@ -34,7 +34,7 @@ def notebook_parameters(notebook, configuration, single_baseline, output_dir):
     return parameters
 
 
-def execute_spectrum(notebook, configuration, single_baseline, output_dir):
+def execute_spectrum(notebook, configuration, single_baseline, output_dir, native_grid=None):
     """Execute with this interpreter; errors propagate to the compute worker."""
     import papermill
     import nbformat
@@ -42,6 +42,11 @@ def execute_spectrum(notebook, configuration, single_baseline, output_dir):
     output_dir = Path(output_dir).resolve()
     parameters = notebook_parameters(notebook, configuration, single_baseline, output_dir)
     document = nbformat.read(notebook, as_version=4)
+    averaging = None
+    if native_grid is not None:
+        from .notebook_averaging import instrument_averaging
+
+        document, averaging = instrument_averaging(document, native_grid)
     modules = ["numpy", "scipy", "astropy", "h5py", "pyuvdata", "hera_cal", "hera_pspec",
                "hera_filters", "hera_qm", "hera_notebook_templates"]
     instrumentation = ("from hera_systematics_model.configuration import capture_imports\n"
@@ -59,7 +64,8 @@ def execute_spectrum(notebook, configuration, single_baseline, output_dir):
         "display_name": "Spectrum worker", "language": "python"})
     write_json_exclusive(output_dir / "execution.json", {"parameters": parameters,
         "notebook": file_identity(notebook), "instrumented_notebook": file_identity(instrumented),
-        "single_baseline": file_identity(single_baseline), "python": sys.executable})
+        "single_baseline": file_identity(single_baseline), "python": sys.executable,
+        "native_averaging": averaging})
     previous = os.environ.get("JUPYTER_PATH")
     os.environ["JUPYTER_PATH"] = str(kernel_root) + (os.pathsep + previous if previous else "")
     try:
@@ -78,8 +84,10 @@ def main(argv=None):
     parser.add_argument("--configuration", required=True)
     parser.add_argument("--single-baseline", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--native-grid", help="Captured shared or retained native averaging grid JSON")
     args = parser.parse_args(argv)
-    execute_spectrum(args.notebook, json.loads(Path(args.configuration).read_text()), args.single_baseline, args.output_dir)
+    execute_spectrum(args.notebook, json.loads(Path(args.configuration).read_text()), args.single_baseline,
+                     args.output_dir, native_grid=args.native_grid)
     return 0
 
 
