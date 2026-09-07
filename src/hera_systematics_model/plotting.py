@@ -144,7 +144,10 @@ def plot_diagnostics(arrays, metadata, directory):
     for index, ax in enumerate(axes.ravel()):
         losses = arrays.get(f"inner_losses_{index}")
         if losses is None:
-            ax.text(.5, .5, "Insufficient time support", ha="center", transform=ax.transAxes)
+            report = metadata.get("folds", [])[index]
+            frozen = report.get("inner", {}).get("selection_repeated") is False
+            ax.text(.5, .5, "Primary configuration held fixed" if frozen else "Inner selection unavailable",
+                    ha="center", transform=ax.transAxes)
             continue
         finite = np.isfinite(losses).all(axis=1)
         for method, color in colors.items():
