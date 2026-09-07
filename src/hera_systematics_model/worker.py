@@ -40,11 +40,18 @@ def verify_product(directory, specification):
             for required in specification.get("required_paths", []):
                 if required not in product:
                     raise ValueError("required HDF5 object absent")
+                obj = product[required]
+                if isinstance(obj, h5py.Dataset) and (obj.shape is None or obj.size == 0):
+                    raise ValueError("required HDF5 dataset is empty")
 
             def check(name, obj):
                 if not isinstance(obj, h5py.Dataset):
                     return
-                structure[name] = {"shape": list(obj.shape), "dtype": str(obj.dtype)}
+                structure[name] = {"shape": None if obj.shape is None else list(obj.shape), "dtype": str(obj.dtype)}
+                if obj.shape is None:
+                    structure[name]["null_dataspace"] = True
+                    obj[()]
+                    return
                 if obj.shape == ():
                     obj[()]
                 elif obj.chunks and all(obj.shape):

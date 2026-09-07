@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from hera_systematics_model.production import create_run, define_task
-from hera_systematics_model.worker import run_task, verified_receipt
+from hera_systematics_model.worker import run_task, verified_receipt, verify_product
 from test_production import task
 
 
@@ -47,3 +47,21 @@ def test_stale_success_marker_cannot_be_reused_with_changed_configuration(tmp_pa
     path.write_text(json.dumps(spec))
     with pytest.raises(ValueError, match="stale"):
         verified_receipt(run, "baseline-1")
+
+
+def test_nullable_hdf_metadata_is_distinct_from_missing_required_data(tmp_path):
+    import h5py
+    import numpy as np
+
+    path = tmp_path / "visibility.h5"
+    with h5py.File(path, "w") as file:
+        file["Header/optional_coordinate"] = h5py.Empty("f8")
+        file["Data/visdata"] = np.ones((2, 3), complex)
+    specification = {"path": path.name, "kind": "hdf5", "required_paths": ["Data/visdata"]}
+    result = verify_product(tmp_path, specification)
+    assert result["structure"]["Header/optional_coordinate"]["null_dataspace"]
+    with h5py.File(path, "r+") as file:
+        del file["Data/visdata"]
+        file["Data/visdata"] = h5py.Empty("c16")
+    with pytest.raises(ValueError, match="required HDF5 dataset is empty"):
+        verify_product(tmp_path, specification)
