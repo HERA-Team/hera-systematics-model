@@ -102,7 +102,7 @@ def validate_task(task):
     paths = []
     for output in task["outputs"]:
         path = Path(output["path"])
-        if path.is_absolute() or ".." in path.parts or output["kind"] not in ("file", "npz", "hdf5"):
+        if path.is_absolute() or ".." in path.parts or output["kind"] not in ("file", "npz", "hdf5", "manifest"):
             raise ValueError("invalid task output declaration")
         paths.append(str(path))
     if not paths or len(paths) != len(set(paths)):

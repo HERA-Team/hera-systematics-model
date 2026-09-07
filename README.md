@@ -263,3 +263,13 @@ python scripts/analysis/plot_aligned_modes.py --pca-dir <dir> --label sum --outd
 
 See `scripts/analysis/README.md` for what each script does and what is in
 the output files.
+
+Tasks with variable numbers of model or diagnostic files can declare a JSON
+output with `kind: "manifest"`. Its schema has `schema_version: 1` and a nonempty
+`products` list. Every entry contains a task-relative `path`, `kind` (`file`,
+`npz`, or `hdf5`), positive `bytes`, and a SHA-256 `sha256`; HDF5 entries may also
+specify `required_paths`. `create_product_manifest` in `product_manifest` verifies
+files before writing this inventory exclusively. Task verification reopens every
+listed file, checks its structure and exact hash, and includes these results in
+the receipt. Duplicate, recursive, self-referencing, and out-of-directory entries
+are rejected. Artifact readers still validate model-specific scientific schemas.

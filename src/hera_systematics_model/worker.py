@@ -25,7 +25,11 @@ def verify_product(directory, specification):
     if not path.is_relative_to(Path(directory).resolve()) or not path.is_file() or path.stat().st_size == 0:
         raise ValueError("missing, empty or escaped output product")
     structure = {}
-    if specification["kind"] == "npz":
+    if specification["kind"] == "manifest":
+        from .product_manifest import verify_product_manifest
+
+        structure = verify_product_manifest(directory, path)
+    elif specification["kind"] == "npz":
         with np.load(path, allow_pickle=False) as product:
             for name in product.files:
                 array = product[name]
