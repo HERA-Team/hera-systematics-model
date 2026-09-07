@@ -21,17 +21,25 @@ def verify_ideal_chunk(reference_file, product_file, require_supported=True):
         if item != file_identity(item["path"]):
             raise ValueError("ideal source identity mismatch")
     reference, product = visibility_header(reference_file), visibility_header(product_file)
-    if (reference["coordinates"] != product["coordinates"] or reference["vis_units"] != product["vis_units"]
-            or reference["baseline_pairs"] != product["baseline_pairs"]):
+    selection = provenance.get("reference_baseline_selection")
+    row_keys = {"ant_1_array", "ant_2_array", "time_array", "lst_array", "integration_time"}
+    unchanged = set(reference["coordinates"]) - row_keys
+    expected_pairs = reference["baseline_pairs"] if selection is None else selection
+    if (any(reference["coordinates"][key] != product["coordinates"][key] for key in unchanged)
+            or reference["vis_units"] != product["vis_units"] or expected_pairs != product["baseline_pairs"]
+            or not set(map(tuple, expected_pairs)).issubset(map(tuple, reference["baseline_pairs"]))):
         raise ValueError("ideal physical metadata differ from reference")
     totals = {"valid_cells": 0, "invalid_cells": 0, "newly_unflagged_cells": 0,
               "valid_zero_cells": 0, "nonzero_invalid_cells": 0}
     baselines = {f"{a}_{b}": {"valid_cells": 0, "invalid_cells": 0} for a, b in product["baseline_pairs"]}
     with h5py.File(reference_file) as ref, h5py.File(product_file) as out:
-        for key in ("uvw_array", "phase_center_id_array"):
+        ra, rb = ref["Header/ant_1_array"][:], ref["Header/ant_2_array"][:]
+        requested = set(map(tuple, expected_pairs))
+        reference_rows = np.array([i for i, pair in enumerate(zip(ra, rb)) if pair in requested])
+        for key in row_keys | {"uvw_array", "phase_center_id_array"}:
             if key in ref["Header"]:
-                if key not in out["Header"] or not np.array_equal(ref["Header"][key][()], out["Header"][key][()]):
-                    raise ValueError("ideal phase coordinates differ from reference")
+                if key not in out["Header"] or not np.array_equal(ref["Header"][key][reference_rows], out["Header"][key][()]):
+                    raise ValueError("ideal physical metadata differ from selected reference rows")
         a, b = out["Header/ant_1_array"][:], out["Header/ant_2_array"][:]
         for row, (ant1, ant2) in enumerate(zip(a, b)):
             values = out["Data/visdata"][row]
@@ -44,7 +52,7 @@ def verify_ideal_chunk(reference_file, product_file, require_supported=True):
             valid, invalid = int((~flags).sum()), int(flags.sum())
             totals["valid_cells"] += valid
             totals["invalid_cells"] += invalid
-            totals["newly_unflagged_cells"] += int((ref["Data/flags"][row] & ~flags).sum())
+            totals["newly_unflagged_cells"] += int((ref["Data/flags"][reference_rows[row]] & ~flags).sum())
             totals["valid_zero_cells"] += int(((values == 0) & ~flags).sum())
             baselines[f"{ant1}_{ant2}"]["valid_cells"] += valid
             baselines[f"{ant1}_{ant2}"]["invalid_cells"] += invalid

@@ -62,15 +62,22 @@ def choose_source_files(inventory, target_lsts, buffer_rad):
     return [inventory[index]["path"] for index in selected]
 
 
-def construct_chunk(reference_file, source_files, mapping, output):
+def construct_chunk(reference_file, source_files, mapping, output, baselines=None):
     """Assign visibilities by physical baseline, time and polarization identities."""
     from pyuvdata import UVData
 
     output = Path(output)
     if output.exists() or output.with_suffix(".json").exists():
         raise FileExistsError(output)
-    reference = UVData.from_file(reference_file)
+    if baselines is not None:
+        baselines = sorted(tuple(pair) for pair in baselines)
+        if (not baselines or len(set(baselines)) != len(baselines)
+                or any(len(pair) != 2 or any(type(a) is not int or a < 0 for a in pair) for pair in baselines)):
+            raise ValueError("unique physical antenna pairs are required")
+    reference = UVData.from_file(reference_file, bls=baselines)
     pairs = reference.get_antpairs()
+    if baselines is not None and sorted(pairs) != baselines:
+        raise ValueError("reference reader changed the selected baseline identities")
     if any(baseline_key(pair) not in mapping for pair in pairs):
         raise ValueError("reference baseline absent from deterministic mapping")
     requested = sorted({tuple(mapping[baseline_key(pair)]["stored_pair"]) for pair in pairs
@@ -107,7 +114,8 @@ def construct_chunk(reference_file, source_files, mapping, output):
     provenance = {"reference": file_identity(reference_file), "sources": [file_identity(p) for p in source_files],
                   "baseline_mapping": {baseline_key(pair): mapping[baseline_key(pair)] for pair in sorted(pairs)},
                   "supported_cells": int(supported.sum()), "total_cells": int(supported.size),
-                  "source_support_policy": "finite_unflagged_interpolation_knots", "source_counts_used": False}
+                  "source_support_policy": "finite_unflagged_interpolation_knots", "source_counts_used": False,
+                  "reference_baseline_selection": [list(pair) for pair in baselines] if baselines is not None else None}
     result = replace_reference_visibilities(reference, values, supported, source.vis_units, source.history,
                                             "Source file identities are stored in the product JSON sidecar.")
     output.parent.mkdir(parents=True, exist_ok=True)

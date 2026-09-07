@@ -51,3 +51,31 @@ def test_model_zero_counts_do_not_erase_finite_source_support(tmp_path):
     actual = pyuvdata.UVData.from_file(output)
     np.testing.assert_allclose(actual.data_array[:, 2, 0], (1 + reference.lst_array) * (1 + 2j), rtol=1e-12)
     assert actual.flag_array[:, 1, 0].all()
+
+
+def test_selected_ideal_baseline_is_bound_to_full_reference_identity(tmp_path):
+    import json
+
+    times = 2459000. + np.arange(4) * 10 / 86400
+    source = visibility(times, pairs=((0, 1), (0, 2)))
+    source.data_array[:] = source.ant_2_array[:, None, None] * (1 + 2j)
+    source_path = tmp_path / "source.uvh5"
+    source.write_uvh5(source_path)
+    reference = visibility(2459000. + np.array([15., 25.]) / 86400, pairs=((0, 2), (0, 1)))
+    reference.flag_array[:] = True
+    reference_path, output = tmp_path / "reference.uvh5", tmp_path / "selected.uvh5"
+    reference.write_uvh5(reference_path)
+    mapping = {"0_2": {"reference_pair": [0, 2], "source_pair": [0, 2], "stored_pair": [0, 2],
+                       "conjugate": False, "exclusion": None}}
+    result = construct_chunk(reference_path, [source_path], mapping, output, baselines=[(0, 2)])
+    assert result["reference_baseline_selection"] == [[0, 2]]
+    verified = verify_ideal_chunk(reference_path, output)
+    assert set(verified["baseline_cells"]) == {"0_2"}
+    assert verified["totals"]["newly_unflagged_cells"] == 16
+    actual = pyuvdata.UVData.from_file(output)
+    np.testing.assert_allclose(actual.data_array, 2 + 4j)
+    sidecar = json.loads(output.with_suffix(".json").read_text())
+    sidecar["reference_baseline_selection"] = [[0, 1]]
+    output.with_suffix(".json").write_text(json.dumps(sidecar))
+    with pytest.raises(ValueError, match="physical metadata"):
+        verify_ideal_chunk(reference_path, output)
