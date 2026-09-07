@@ -80,7 +80,9 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve", w
     del parts
     writers = {}
     for pair in baselines:
-        metadata = full.select(bls=[pair], inplace=False)
+        # Selection can leave strided views owning a copy of every input row.
+        # Compact those arrays before retaining one object per baseline.
+        metadata = full.select(bls=[pair], inplace=False).copy()
         metadata.reorder_blts(order="time")
         if set(metadata.get_antpairs()) != {pair}:
             raise ValueError("cornerturn metadata changed baseline orientation")

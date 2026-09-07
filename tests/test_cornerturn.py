@@ -132,3 +132,30 @@ def test_buffered_cornerturn_matches_single_row_writes(tmp_path):
             for name in ["Data/visdata", "Data/flags", "Data/nsamples", "Header/time_array", "Header/lst_array",
                          "Header/uvw_array", "Header/ant_1_array", "Header/ant_2_array", "Header/x_orientation"]:
                 np.testing.assert_equal(a[name][()], b[name][()])
+
+
+def test_baseline_metadata_does_not_retain_full_inventory_arrays(tmp_path, monkeypatch):
+    data = visibility(2459000. + np.arange(8) * 10. / 86400,
+                      pairs=((0, 1), (0, 2)))
+    data.reorder_blts(order="time")
+    path = tmp_path / "two-baselines.uvh5"
+    data.write_uvh5(path)
+    initialize = UVData.initialize_uvh5_file
+    checked = []
+
+    def bounded_metadata(self, *args, **kwargs):
+        assert self.Nbls == 1
+        for name in self:
+            parameter = getattr(self, name)
+            value = parameter.value
+            if isinstance(value, np.ndarray) and "Nblts" in parameter.form:
+                owner = value
+                while isinstance(owner.base, np.ndarray):
+                    owner = owner.base
+                assert owner.nbytes <= value.nbytes, parameter.name
+        checked.append(self.Nblts)
+        return initialize(self, *args, **kwargs)
+
+    monkeypatch.setattr(UVData, "initialize_uvh5_file", bounded_metadata)
+    result = cornerturn_baselines([path], [(0, 1), (0, 2)], tmp_path / "out")
+    assert result["passed"] and checked == [8, 8]
