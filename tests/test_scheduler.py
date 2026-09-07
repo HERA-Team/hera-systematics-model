@@ -2,7 +2,7 @@ import pytest
 from types import SimpleNamespace
 
 from hera_systematics_model import scheduler
-from hera_systematics_model.scheduler import memory_mib, queued_resources, require_resources, submit_task
+from hera_systematics_model.scheduler import memory_mib, queued_resources, require_resources, submit_task, require_dependency_resources
 from hera_systematics_model.production import create_run, define_task
 from test_production import task
 
@@ -82,5 +82,18 @@ def test_dependencies_allow_only_nonoverlapping_predecessors_and_keep_storage_re
     with pytest.raises(ValueError, match="dependencies changed"):
         submit_task(run, "baseline-3", "/usr/bin/python3", tmp_path)
     active.append("103|hsm-a-three|1|1G")
+    fourth = submit_task(run, "baseline-4", "/usr/bin/python3", tmp_path, afterok=["102"])
+    assert fourth["afterok"] == ["102"]
+
+
+def test_serial_jobs_cannot_be_counted_as_concurrent_but_independent_jobs_can(tmp_path):
+    active = [{"job_id": str(i), "cpus": 2, "memory_mib": 32768} for i in (1, 2)]
+    request = {"cpus": 2, "memory_mib": 65536, "hours": 2}
+    assert len(require_dependency_resources(active, request, [], {"1": [], "2": ["1"]})) == 2
     with pytest.raises(ValueError, match="aggregate"):
-        submit_task(run, "baseline-4", "/usr/bin/python3", tmp_path, afterok=["102"])
+        require_dependency_resources(active, request, [], {"1": [], "2": []})
+    with pytest.raises(ValueError, match="aggregate"):
+        require_dependency_resources(active, {**request, "memory_mib": 131072}, [], {"1": [], "2": ["1"]})
+    assert require_dependency_resources(active, request, ["2"], {"1": [], "2": ["1"]}) == []
+    with pytest.raises(ValueError, match="cyclic"):
+        require_dependency_resources(active, request, [], {"1": ["2"], "2": ["1"]})

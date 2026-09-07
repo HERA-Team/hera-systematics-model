@@ -62,9 +62,10 @@ temporary hash caches are never reused across tasks or executions.
 
 Scheduler submissions accept repeated `--afterok JOB_ID` arguments for recorded
 predecessors. Such jobs can be queued while their predecessors run, because
-Slurm permits them to start only after every predecessor succeeds. All other
-queued jobs count toward the conservative CPU, memory and two-job overlap
-limits. Storage reservations include every queued task, including predecessors.
+Slurm permits them to start only after every predecessor succeeds. Recorded
+predecessor relationships bound every possible CPU, memory and two-job overlap;
+independent queued jobs are conservatively treated as simultaneous. Storage
+reservations include every queued task, including predecessors.
 
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 

@@ -41,6 +41,36 @@ def require_resources(active, requested):
         raise ValueError("aggregate active task resources exceed limits")
 
 
+def require_dependency_resources(active, requested, dependencies, predecessors):
+    """Bound every possible overlap using recorded successful-completion edges."""
+    ancestors = {}
+
+    def collect(job, visiting=frozenset()):
+        if job in visiting:
+            raise ValueError("cyclic scheduler dependencies")
+        if job not in predecessors:
+            raise ValueError("dependencies must identify recorded workflow jobs")
+        if job not in ancestors:
+            parents = set(predecessors[job])
+            ancestors[job] = parents | set().union(*(collect(parent, visiting | {job}) for parent in parents))
+        return ancestors[job]
+
+    before = set(dependencies)
+    for job in [*before, *(item["job_id"] for item in active)]:
+        collect(job)
+    for job in dependencies:
+        before |= ancestors[job]
+    possible = [job for job in active if job["job_id"] not in before]
+    require_resources([], requested)
+    for index, job in enumerate(possible):
+        require_resources([job], requested)
+        for other in possible[index + 1:]:
+            a, b = job["job_id"], other["job_id"]
+            if a not in ancestors[b] and b not in ancestors[a]:
+                raise ValueError("aggregate active task resources exceed limits")
+    return possible
+
+
 def submit_task(run, name, python, package_source, partition="hera", afterok=()):
     """Reserve one task under a workflow-wide lock; never submit it twice."""
     run = Path(run).resolve()
@@ -70,12 +100,14 @@ def submit_task(run, name, python, package_source, partition="hera", afterok=())
         reservation = 0
         found = set()
         known_jobs = set()
+        predecessors = {}
         for path in root.glob("*/submissions/*.json"):
             if path.name.endswith(".dispatch.json"):
                 continue
             record = json.loads(path.read_text())
             if record.get("job_id"):
                 known_jobs.add(record["job_id"])
+                predecessors[record["job_id"]] = record.get("afterok", [])
             if record.get("job_id") in ids:
                 reservation += record["projected_bytes"]
                 found.add(record["job_id"])
@@ -83,10 +115,7 @@ def submit_task(run, name, python, package_source, partition="hera", afterok=())
             raise ValueError("active workflow jobs lack storage reservations")
         if not set(dependencies).issubset(known_jobs):
             raise ValueError("dependencies must identify recorded workflow jobs")
-        # These predecessors must finish successfully before the new job can
-        # run. All other queued jobs are conservatively treated as overlapping.
-        simultaneous = [job for job in active if job["job_id"] not in dependencies]
-        require_resources(simultaneous, task["resources"])
+        simultaneous = require_dependency_resources(active, task["resources"], dependencies, predecessors)
         storage = require_storage(root, reservation + task["projected_bytes"])
         worker = ["env", f"PYTHONPATH={Path(package_source).resolve()}", "PYTHONDONTWRITEBYTECODE=1",
                   "OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1", "MKL_NUM_THREADS=1",
