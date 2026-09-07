@@ -28,6 +28,7 @@ class AnalysisConfig:
     group: int | None = None
     delay: int | None = None
     group_exclusion: str | None = None
+    region: str = "full"
 
     def __post_init__(self):
         if type(self.guard) is not int or self.guard not in (8, 12, 16):
@@ -49,6 +50,8 @@ class AnalysisConfig:
             raise ValueError("unsupported group exclusion measure")
         if self.group_exclusion is not None and (self.group is not None or self.delay is not None):
             raise ValueError("group exclusions require the full cylindrical plane")
+        if self.region not in ("full", "horizon", "horizon_buffer"):
+            raise ValueError("region must be full, horizon or horizon_buffer")
 
     @classmethod
     def load(cls, path):
@@ -63,15 +66,22 @@ class AnalysisConfig:
         return candidate_grid(self.max_rank, self.include_kernel, self.representations, self.methods)
 
     def training_filter(self, samples):
-        if self.group_exclusion is None:
-            return None
-        from .sensitivity import GroupExclusion
+        from .sensitivity import CombinedFilters, GeometricRegion, GroupExclusion
+        from .views import geometry_masks
 
-        counts = {6: 3, 7: 1}
-        if samples.metadata["spw"] not in counts:
-            raise ValueError("group exclusions are defined only for spectral windows 6 and 7")
-        return GroupExclusion(samples.corrupted.shape[1:], tuple(samples.group_ids),
-                              counts[samples.metadata["spw"]], self.group_exclusion)
+        filters = []
+        if self.region != "full":
+            mask = geometry_masks(samples, samples.baseline_length_m / 299792458.)[self.region]
+            gs = slice(None) if self.group is None else slice(self.group, self.group + 1)
+            ds = slice(None) if self.delay is None else slice(self.delay, self.delay + 1)
+            filters.append(GeometricRegion(mask[gs, ds].ravel(), self.region))
+        if self.group_exclusion is not None:
+            counts = {6: 3, 7: 1}
+            if samples.metadata["spw"] not in counts:
+                raise ValueError("group exclusions are defined only for spectral windows 6 and 7")
+            filters.append(GroupExclusion(samples.corrupted.shape[1:], tuple(samples.group_ids),
+                                          counts[samples.metadata["spw"]], self.group_exclusion))
+        return None if not filters else filters[0] if len(filters) == 1 else CombinedFilters(tuple(filters))
 
 
 def file_identity(path):

@@ -9,6 +9,50 @@ from .scoring import CandidateFailure
 
 
 @dataclass(frozen=True)
+class GeometricRegion:
+    """Apply a fixed physical mask while retaining the original denominator."""
+
+    feature_mask: np.ndarray
+    name: str
+
+    def __post_init__(self):
+        mask = np.asarray(self.feature_mask)
+        if mask.ndim != 1 or mask.dtype != bool or not mask.size:
+            raise ValueError("region requires a nonempty one-dimensional boolean mask")
+        if self.name not in ("full", "horizon", "horizon_buffer"):
+            raise ValueError("unknown geometric region")
+        mask = mask.copy()
+        mask.flags.writeable = False
+        object.__setattr__(self, "feature_mask", mask)
+
+    def __call__(self, arrays, training_rows):
+        arrays = measured_arrays(*arrays)
+        if arrays[0].shape[1] != len(self.feature_mask):
+            raise ValueError("region feature dimensions disagree")
+        if not self.feature_mask.any():
+            raise CandidateFailure("geometric region contains no feature cells")
+        filtered = (*arrays[:3], arrays[3] & self.feature_mask)
+        return filtered, {"region": self.name, "data_dependent": False,
+            "excluded_feature_indices": np.flatnonzero(~self.feature_mask).tolist(),
+            "original_features": len(self.feature_mask),
+            "retained_features": int(self.feature_mask.sum())}
+
+
+@dataclass(frozen=True)
+class CombinedFilters:
+    """Apply each filter to the preceding support using the same training rows."""
+
+    filters: tuple
+
+    def __call__(self, arrays, training_rows):
+        reports = []
+        for function in self.filters:
+            arrays, report = function(arrays, training_rows)
+            reports.append(report)
+        return arrays, {"ordered_filters": reports}
+
+
+@dataclass(frozen=True)
 class GroupExclusion:
     shape: tuple
     group_ids: tuple

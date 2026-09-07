@@ -118,9 +118,15 @@ hera-systematics verify evaluation.npz
 An empty configuration object selects all four residual representations,
 complete-feature PCA, masked factorization and the kernel comparison. Optional
 keys are `guard` (8, 12 or 16 native windows), `max_rank` (0 through 20),
-`include_kernel`, `representations`, `methods`, `group_exclusion`, and either `group` or `delay`
+`include_kernel`, `representations`, `methods`, `group_exclusion`, `region`, and either `group` or `delay`
 for a localized slice. The defaults use guard 12 and maximum rank 20. Run
 expensive analyses through the compute scheduler.
+
+The `region` defaults to `full`; `horizon` retains delays above baseline length
+divided by the speed of light, and `horizon_buffer` adds 500 ns to that boundary.
+These fixed masks precede any training-only group exclusion. Evaluation retains
+the original eligible-cell denominator and records geometric exclusions
+separately. Regions without feature support return an explicit failure record.
 
 Evaluation uses four outer physical-time folds and three inner folds, with
 withheld feature regions for coefficient inference. Final descriptive fits

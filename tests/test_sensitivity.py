@@ -7,6 +7,10 @@ from hera_systematics_model.sensitivity import GroupExclusion
 from hera_systematics_model.splits import feature_partitions, time_folds
 from hera_systematics_model.fitting import select_final_fit
 from test_evaluation import series
+from test_samples import paired
+from hera_systematics_model.configuration import AnalysisConfig
+from hera_systematics_model.sensitivity import CombinedFilters, GeometricRegion
+from hera_systematics_model.views import analysis_view, geometry_masks
 
 
 @pytest.mark.parametrize("metric", ["leading_linear_loading", "noise_weighted_energy"])
@@ -52,3 +56,68 @@ def test_descriptive_exclusion_is_selected_by_inner_training_partitions():
     assert result.metadata["training_filter"]["training_rows"] == list(range(100))
     np.testing.assert_array_equal(result.arrays["target"] | result.arrays["excluded"] | result.arrays["unavailable"],
                                   result.arrays["eligible"])
+
+
+def test_region_preserves_coverage_and_ignores_excluded_power(tmp_path):
+    arrays = series()
+    mask = np.tile([False, False, True, True, True, True], 5)
+    region = GeometricRegion(mask, "horizon")
+    candidates = candidate_grid(2, False, ["linear"], ["complete"])
+    left = evaluate_nested(arrays, np.arange(100), (5, 6), candidates,
+                           guard=3, training_filter=region)
+    changed = [a.copy() for a in arrays]
+    changed[0][:, ~mask] = 1e50
+    right = evaluate_nested(changed, np.arange(100), (5, 6), candidates,
+                            guard=3, training_filter=region)
+    assert left.metadata["complete"] and right.metadata["complete"]
+    assert left.arrays["eligible"].sum() == 3000
+    assert left.arrays["excluded"].sum() == 1000
+    for name in ("prediction", "window_loss", "modeled", "mean_only"):
+        np.testing.assert_equal(left.arrays[name], right.arrays[name])
+    np.testing.assert_equal(left.arrays["target"] | left.arrays["excluded"] | left.arrays["unavailable"],
+                            left.arrays["eligible"])
+    left.save(tmp_path / "regional.npz")
+    restored = type(left).load(tmp_path / "regional.npz")
+    np.testing.assert_equal(restored.arrays["excluded"], left.arrays["excluded"])
+
+
+@pytest.mark.parametrize("slice_config", [{}, {"group": 1}, {"delay": 2}])
+def test_config_region_uses_the_same_physical_slice(paired, slice_config):
+    paired.baseline_length_m[:] = [40., 90.]
+    config = AnalysisConfig(region="horizon", **slice_config)
+    arrays, shape, _ = analysis_view(paired, **slice_config)
+    filtered, report = config.training_filter(paired)(arrays, [0, 1])
+    mask = geometry_masks(paired, paired.baseline_length_m / 299792458.)["horizon"]
+    if "group" in slice_config:
+        mask = mask[1:2]
+    if "delay" in slice_config:
+        mask = mask[:, 2:3]
+    np.testing.assert_equal(filtered[3], arrays[3] & mask.ravel())
+    assert report["retained_features"] == int(mask.sum())
+    assert report["original_features"] == np.prod(shape)
+
+
+def test_region_then_group_exclusion_uses_only_retained_training_cells():
+    arrays = series()
+    mask = np.tile([False, False, True, True, True, True], 5)
+    filters = CombinedFilters((GeometricRegion(mask, "horizon"),
+                              GroupExclusion((5, 6), tuple("abcde"), 1)))
+    train = np.arange(50)
+    filtered, report = filters(arrays, train)
+    changed = [a.copy() for a in arrays]
+    changed[0][:, ~mask] += 1e30
+    changed[0][50:] += 1e20
+    other, other_report = filters(changed, train)
+    assert report == other_report
+    np.testing.assert_equal(filtered[3], other[3])
+    assert len(report["ordered_filters"]) == 2
+
+
+def test_empty_region_is_explicit_insufficient_candidate_support():
+    result = evaluate_nested(series(), np.arange(100), (5, 6),
+        candidate_grid(0, False, ["linear"], ["complete"]), guard=3,
+        training_filter=GeometricRegion(np.zeros(30, bool), "horizon_buffer"))
+    assert not result.metadata["complete"]
+    assert not result.arrays["target"].any()
+    assert all("geometric region" in fold["inner"]["failures"][0]["reason"]
+               for fold in result.metadata["folds"])
