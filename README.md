@@ -22,7 +22,7 @@ NRAO storage. Only code, manifests and small summaries are kept here.
 Python 3.10 or newer is required. Install the array-analysis package with
 `python -m pip install -e .`. Optional dependency groups are `io` for HERA
 products, `kernel` for kernel fitting, `plot` for figures, and `dev` for tests.
-For example, `python -m pip install -e '.[kernel,dev]'` enables synthetic
+For example, `python -m pip install -e '.[kernel,plot,dev]'` enables synthetic
 verification with `python -m pytest -q`. CI checks Python 3.10 with NumPy 1.26
 and Python 3.12 with NumPy 2.0. Production I/O environments must be captured
 and verified separately against their retained products.

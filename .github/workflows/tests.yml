@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install 'numpy==${{ matrix.numpy }}' 'scipy==${{ matrix.scipy }}' 'scikit-learn==1.5.0' 'pytest==8.3.5' 'build==1.2.2.post1' 'h5py==3.12.1' 'nbformat==5.10.4'
+      - run: python -m pip install 'numpy==${{ matrix.numpy }}' 'scipy==${{ matrix.scipy }}' 'scikit-learn==1.5.0' 'pytest==8.3.5' 'build==1.2.2.post1' 'h5py==3.12.1' 'nbformat==5.10.4' 'matplotlib==3.9.2'
       - run: python -m pip install --no-deps -e .
       - run: python -m pytest -q
       - run: python -m build --outdir "$RUNNER_TEMP/distributions"
