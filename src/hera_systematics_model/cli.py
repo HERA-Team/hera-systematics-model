@@ -48,12 +48,13 @@ def run_verify(args):
     from .model_io import load_model
     from .records import SpectrumRecords
     from .samples import PairedSamples
+    from .window_membership import WindowMemberships
 
     path = Path(args.artifact)
     kind = json.loads(path.with_suffix(".json").read_text()).get("kind")
     loaders = {"paired-samples": PairedSamples.load, "spectrum-records": SpectrumRecords.load,
                "fitted-model": load_model, "evaluation": Evaluation.load,
-               "diagnostics": lambda p: read_artifact(p, "diagnostics")}
+               "diagnostics": lambda p: read_artifact(p, "diagnostics"), "window-memberships": WindowMemberships.load}
     if kind not in loaders:
         raise ValueError("unsupported artifact kind")
     product = loaders[kind](path)
