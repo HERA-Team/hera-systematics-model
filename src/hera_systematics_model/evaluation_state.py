@@ -71,3 +71,9 @@ def validate_evaluation(arrays, metadata, models):
                     or np.any(support & ~predictor) or scores.shape != (len(test), model.rank)
                     or not np.isfinite(scores).all()):
                 raise ValueError("saved coefficient inference uses invalid predictor support")
+            if f"{prefix}_coefficients_inferred" in arrays:
+                inferred = np.asarray(arrays[f"{prefix}_coefficients_inferred"])
+                if (inferred.shape != (len(test),) or inferred.dtype.kind != "b"
+                        or not np.array_equal(inferred, support.any(axis=1))
+                        or np.any(scores[~inferred] != 0)):
+                    raise ValueError("inactive coefficient placeholders disagree with inference support")

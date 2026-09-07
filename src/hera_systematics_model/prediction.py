@@ -88,7 +88,7 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
     model = None
     for partition_index, partition in enumerate(partitions):
         covered += partition.target
-        if not partition.target.any():
+        if not partition.target.any() or not target[:, partition.target].any():
             continue
         if model is None or candidate["method"] == "kernel":
             model = fit_candidate(arrays, train, candidate, partition.predictor, window_ids, cache)
@@ -102,8 +102,18 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
             scores, diagnostics = np.zeros((len(test), 0)), []
         else:
             diagnostics = [] if keep_models else None
-            pred, scores = model.predict(*(a[test] for a in arrays), predictor=partition.predictor,
-                                         diagnostics=diagnostics)
+            pred = np.broadcast_to(mean, target.shape).copy()
+            scores = np.zeros((len(test), model.rank))
+            # Coefficients are needed only where this partition has a valid
+            # target supported by modes. Other targets use the shared mean.
+            infer = np.flatnonzero((target & model.feature_mask & partition.target).any(axis=1))
+            if len(infer):
+                predicted, inferred_scores = model.predict(*(a[test[infer]] for a in arrays),
+                    predictor=partition.predictor, diagnostics=diagnostics)
+                pred[infer], scores[infer] = predicted, inferred_scores
+                if diagnostics is not None:
+                    for entry in diagnostics:
+                        entry["row"] = int(infer[entry["row"]])
             modeled[:, partition.target] = model.feature_mask[partition.target] & target[:, partition.target]
         if keep_models:
             support = np.zeros(target.shape, bool)
@@ -115,6 +125,8 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
                 conditions[row["row"]] = row["condition_number"]
             inference.append({"scores": scores, "predictor_support": support,
                 "effective_rank": ranks, "condition_number": conditions,
+                "coefficients_inferred": support.any(axis=1),
+                "inactive_score_encoding": "zero placeholder where coefficients_inferred is false",
                 "partition_index": partition_index, "model_index": len(models) - 1,
                 "type": "kernel_embedding" if candidate["method"] == "kernel" else "linear_coefficients",
                 "condition_definition": "retained training kernel eigenvalue ratio" if candidate["method"] == "kernel"

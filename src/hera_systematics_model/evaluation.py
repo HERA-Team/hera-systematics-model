@@ -29,7 +29,8 @@ def structural_rank_ceiling(valid, folds, partitions, candidate, candidates, fol
             counts = observed[fold.train].sum(axis=0)
             features = counts >= rank + 2 if candidate["method"] == "masked" else counts == len(fold.train)
             for partition in partitions:
-                if partition.target.any() and np.any((observed[fold.test] & features & partition.predictor).sum(axis=1) < rank + 2):
+                required = (observed[fold.test] & features & partition.target).any(axis=1)
+                if required.any() and np.any((observed[fold.test] & features & partition.predictor).sum(axis=1)[required] < rank + 2):
                     supported = False
                     break
         if supported:
@@ -158,7 +159,7 @@ def evaluate_nested(arrays, window_ids, feature_shape, candidates=None, guard=12
             report["inference"] = []
             for index, entry in enumerate(result.inference):
                 prefix = f"inference_{fi}_{index}"
-                names = ("scores", "predictor_support", "effective_rank", "condition_number")
+                names = ("scores", "predictor_support", "effective_rank", "condition_number", "coefficients_inferred")
                 for name in names:
                     output[f"{prefix}_{name}"] = entry[name]
                 report["inference"].append({**{key: value for key, value in entry.items() if key not in names},
