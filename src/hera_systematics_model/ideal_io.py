@@ -100,12 +100,14 @@ def construct_chunk(reference_file, source_files, mapping, output):
         data = source.data_array[source_rows][:, :, pol_indices]
         if entry["conjugate"]:
             data = data.conj()
-        counts = source.nsample_array[source_rows][:, :, pol_indices]
-        valid = (~source.flag_array[source_rows][:, :, pol_indices] & np.isfinite(counts) & (counts > 0))
+        # Model visibilities do not represent counted observations. Their stored
+        # sample counts may be zero even when finite, unflagged sky values exist.
+        valid = ~source.flag_array[source_rows][:, :, pol_indices] & np.isfinite(data)
         values[rows], supported[rows] = interpolate_supported(knots, data, valid, targets)
     provenance = {"reference": file_identity(reference_file), "sources": [file_identity(p) for p in source_files],
                   "baseline_mapping": {baseline_key(pair): mapping[baseline_key(pair)] for pair in sorted(pairs)},
-                  "supported_cells": int(supported.sum()), "total_cells": int(supported.size)}
+                  "supported_cells": int(supported.sum()), "total_cells": int(supported.size),
+                  "source_support_policy": "finite_unflagged_interpolation_knots", "source_counts_used": False}
     result = replace_reference_visibilities(reference, values, supported, source.vis_units, source.history,
                                             "Source file identities are stored in the product JSON sidecar.")
     output.parent.mkdir(parents=True, exist_ok=True)

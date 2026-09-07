@@ -39,3 +39,15 @@ def test_verified_ideal_retains_zero_and_rejects_count_or_metadata_changes(tmp_p
     record()
     with pytest.raises(ValueError, match="physical metadata"):
         verify_ideal_chunk(reference, ideal)
+
+
+def test_an_entirely_unsupported_chunk_cannot_pass_default_acceptance(tmp_path):
+    reference, ideal = tmp_path / "reference.uvh5", tmp_path / "ideal.uvh5"
+    create(reference)
+    create(ideal)
+    ideal.with_suffix(".json").write_text(json.dumps({"reference": file_identity(reference),
+        "output": file_identity(ideal), "sources": [], "supported_cells": 0, "total_cells": 16}))
+    with pytest.raises(ValueError, match="no supported"):
+        verify_ideal_chunk(reference, ideal)
+    result = verify_ideal_chunk(reference, ideal, require_supported=False)
+    assert result["support_unavailable_reason"] is not None

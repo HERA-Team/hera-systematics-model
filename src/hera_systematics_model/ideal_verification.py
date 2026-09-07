@@ -9,7 +9,7 @@ from .configuration import file_identity
 from .visibility_inventory import visibility_header
 
 
-def verify_ideal_chunk(reference_file, product_file):
+def verify_ideal_chunk(reference_file, product_file, require_supported=True):
     """Check every cell and source identity against the construction sidecar."""
     import h5py
 
@@ -51,7 +51,10 @@ def verify_ideal_chunk(reference_file, product_file):
     if (totals["valid_cells"] != provenance["supported_cells"]
             or totals["valid_cells"] + totals["invalid_cells"] != provenance["total_cells"]):
         raise ValueError("ideal support count differs from construction record")
+    if require_supported and totals["valid_cells"] == 0:
+        raise ValueError("ideal chunk contains no supported samples")
     return {"passed": True, "reference": provenance["reference"], "product": provenance["output"],
             "totals": totals, "baseline_cells": baselines, "times_jd": product["times_jd"],
             "lsts_rad": product["lsts_rad"], "vis_units": product["vis_units"],
+            "support_unavailable_reason": None if totals["valid_cells"] else "no finite unflagged source support",
             "integration_seconds": product["integration_seconds"]}
