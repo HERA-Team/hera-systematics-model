@@ -80,6 +80,11 @@ def test_stability_uses_saved_slice_and_rejects_changed_samples(tmp_path, paired
     assert metadata["configuration"]["group"] == 0
     assert len(metadata["identity"]["group_ids"]) == 1
     assert arrays["replicate_feature_masks"].shape == (2, len(sample.delay_s))
+    evaluated = tmp_path / "evaluated.npz"
+    assert main(["evaluate", "--samples", str(source), "--config", str(config), "--output", str(evaluated)]) == 0
+    summary = tmp_path / "summary.json"
+    assert main(["summary", "--fit", str(fit), "--evaluation", str(evaluated), "--output", str(summary)]) == 0
+    assert json.loads(summary.read_text())["evaluation_complete"]
     changed = replace(sample, corrupted=sample.corrupted + 1)
     changed_path = tmp_path / "changed.npz"
     changed.save(changed_path)

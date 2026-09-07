@@ -83,7 +83,24 @@ def run_cross_spw(args):
     return 0
 
 
+def run_summary(args):
+    from .evidence import evaluation_evidence
+    from .production import write_json_exclusive
+
+    result = evaluation_evidence(Evaluation.load(args.evaluation), Evaluation.load(args.fit))
+    result["inputs"] = input_identities([args.evaluation, args.fit])
+    result["runtime"] = capture_runtime()
+    write_json_exclusive(Path(args.output), result)
+    complete = result["evaluation_complete"] and result["descriptive_fit"]["complete"]
+    print(json.dumps({"output": str(Path(args.output).resolve()), "complete": complete}))
+    return 0 if complete else 2
+
+
 def add_commands(commands):
+    summary = commands.add_parser("summary", help="Export numerical evidence across physical-time folds")
+    for name in ("fit", "evaluation", "output"):
+        summary.add_argument("--" + name, required=True)
+    summary.set_defaults(function=run_summary)
     cross = commands.add_parser("cross-spw", help="Compare saved modes on matched physical coordinates")
     for name in ("left-samples", "right-samples", "left-fit", "right-fit", "output"):
         cross.add_argument("--" + name, required=True)
