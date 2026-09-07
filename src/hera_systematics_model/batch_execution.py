@@ -85,7 +85,8 @@ def run_bounded_commands(tasks, directory, workers, allocated_cpus, allocated_me
                     records[index] = on_completion(records[index], directory / tasks[index]["name"])
                 failed |= records[index]["status"] != "exited_zero"
     report = {"resources": reservation, "records": records, "launched_commands": launched,
-              "all_commands_exited_zero": not failed and launched == len(tasks),
+              "all_commands_exited_zero": launched == len(tasks) and all(r["exit_code"] == 0 for r in records),
+              "completion_checks_passed": None if on_completion is None else not failed and launched == len(tasks),
               "products_verified": False, "finished_unix": time.time()}
     write_json_exclusive(directory / "batch-result.json", report)
     return report

@@ -60,3 +60,12 @@ def test_failed_product_acceptance_stops_new_launches_despite_zero_exit(tmp_path
         tmp_path / "batch", 1, 2, 16384, on_completion=reject)
     assert not result["all_commands_exited_zero"]
     assert result["records"][1]["status"] == "not_started"
+
+
+def test_zero_command_exit_remains_distinct_from_failed_product_check(tmp_path):
+    result = run_bounded_commands([task("a", "pass")], tmp_path / "batch", 1, 2, 16384,
+        on_completion=lambda record, folder: {**record, "status": "verification_failed"})
+    assert result["all_commands_exited_zero"]
+    assert result["completion_checks_passed"] is False
+    assert result["products_verified"] is False
+    assert result["records"][0]["exit_code"] == 0
