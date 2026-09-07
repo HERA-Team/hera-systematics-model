@@ -6,7 +6,8 @@ import re
 import sys
 
 from .batch_execution import run_bounded_commands, validate_batch
-from .configuration import capture_runtime, digest_json
+from .configuration import capture_imports, capture_runtime, digest_json
+from .notebook import SPECTRAL_MODULES
 from .input_verification import VerifiedInputs
 from .notebook_averaging import load_native_grid
 from .production import write_json_exclusive
@@ -51,7 +52,11 @@ def run_spectral_batch(inventory_path, directory, workers, allocated_cpus, alloc
     reservations = validate_batch([{"name": "resource-check", "command": [sys.executable], "environment": {}}],
                                   workers, allocated_cpus, allocated_memory_mib)
     directory.mkdir(parents=True, exist_ok=False)
-    runtime = capture_runtime()
+    # Scientific imports can expose bundled distribution metadata. Capture the
+    # same import context as the executed notebook before constructing identities.
+    imported = capture_imports(SPECTRAL_MODULES)
+    runtime = imported["runtime"]
+    write_json_exclusive(directory / "import-runtime.json", imported)
     write_json_exclusive(directory / "runtime.json", runtime)
     configuration_path = directory / "configuration.json"
     write_json_exclusive(configuration_path, inventory["configuration"])

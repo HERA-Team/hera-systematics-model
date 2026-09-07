@@ -11,6 +11,10 @@ from .configuration import file_identity
 from .production import write_json_exclusive
 
 
+SPECTRAL_MODULES = ["numpy", "scipy", "astropy", "h5py", "pyuvdata", "hera_cal", "hera_pspec",
+                    "hera_filters", "hera_qm", "hera_notebook_templates"]
+
+
 def notebook_parameters(notebook, configuration, single_baseline, output_dir):
     """Validate overrides against the captured parameter cell."""
     document = json.loads(Path(notebook).read_text())
@@ -47,12 +51,10 @@ def execute_spectrum(notebook, configuration, single_baseline, output_dir, nativ
         from .notebook_averaging import instrument_averaging
 
         document, averaging = instrument_averaging(document, native_grid)
-    modules = ["numpy", "scipy", "astropy", "h5py", "pyuvdata", "hera_cal", "hera_pspec",
-               "hera_filters", "hera_qm", "hera_notebook_templates"]
     instrumentation = ("from hera_systematics_model.configuration import capture_imports\n"
         "from hera_systematics_model.production import write_json_exclusive\n"
         "from pathlib import Path\n"
-        f"write_json_exclusive(Path({str(output_dir / 'import-runtime.json')!r}), capture_imports({modules!r}))\n")
+        f"write_json_exclusive(Path({str(output_dir / 'import-runtime.json')!r}), capture_imports({SPECTRAL_MODULES!r}))\n")
     document.cells.append(nbformat.v4.new_code_cell(instrumentation))
     instrumented = output_dir / "instrumented.ipynb"
     with instrumented.open("x") as stream:

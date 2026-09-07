@@ -10,6 +10,11 @@ from hera_systematics_model.window_membership import WindowMemberships
 from test_spectral_receipts import products
 
 
+@pytest.fixture(autouse=True)
+def synthetic_import_context(monkeypatch):
+    monkeypatch.setattr(batch, "capture_imports", lambda names: {"runtime": capture_runtime(), "imports": {}})
+
+
 def setup_inventory(tmp_path):
     original, identity, native = products(tmp_path)
     auto = tmp_path / "zen.LST.baseline.0_0.sum.uvh5"
@@ -81,3 +86,29 @@ def test_zero_exit_without_spectral_payload_is_a_failed_batch(tmp_path, monkeypa
     assert not result["passed"]
     assert "output product" in result["baselines"][0]["verification_error"]
     assert (tmp_path / "batch/input-verification.json").exists()
+
+
+def test_expected_runtime_is_captured_after_scientific_imports(tmp_path, monkeypatch):
+    path, value, original = setup_inventory(tmp_path)
+    primed = []
+    actual = capture_runtime
+
+    def runtime():
+        result = actual()
+        if primed:
+            result["distributions"] = [*result["distributions"], ["bundled-dependency", "1.0"]]
+        return result
+
+    def imports(names):
+        assert names == batch.SPECTRAL_MODULES
+        primed.append(True)
+        return {"runtime": runtime(), "imports": {}}
+
+    monkeypatch.setattr(batch, "capture_imports", imports)
+    monkeypatch.setattr(batch, "capture_runtime", runtime)
+    monkeypatch.setitem(globals(), "capture_runtime", runtime)
+    monkeypatch.setattr(batch, "run_bounded_commands", synthetic_execution(original, value))
+    result = batch.run_spectral_batch(path, tmp_path / "batch", 1, 2, 16384)
+    assert result["passed"] and primed == [True]
+    saved = json.loads((tmp_path / "batch/import-runtime.json").read_text())
+    assert ["bundled-dependency", "1.0"] in saved["runtime"]["distributions"]
