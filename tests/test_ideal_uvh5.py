@@ -15,7 +15,7 @@ def visibility(times, pairs=((0, 1),)):
     iers.conf.auto_download = False
     telescope = pyuvdata.Telescope.new("synthetic", EarthLocation.from_geodetic(21., -30., 1000),
         antenna_positions={0: np.array([0., 0., 0.]), 1: np.array([10., 0., 0.]), 2: np.array([0., 10., 0.])},
-        instrument="synthetic", x_orientation="east", update_from_known=False, mount_type="fixed")
+        instrument="synthetic", x_orientation="east", feeds=["x", "y"], update_from_known=False, mount_type="fixed")
     return pyuvdata.UVData.new(freq_array=np.array([100e6, 101e6, 102e6, 103e6]),
         polarization_array=[-5, -6], times=np.asarray(times), telescope=telescope, antpairs=list(pairs),
         do_blt_outer=True, integration_time=10., channel_width=1e6, empty=True,
