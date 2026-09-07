@@ -65,6 +65,8 @@ def physical_mode_energy(model, scores, ideal, pn, valid, high_k_mask):
     arrays = {"mean_squared_contrast": np.full((model.rank, valid.shape[1]), np.nan),
               "full_window_energy": np.full((model.rank, len(valid)), np.nan),
               "high_k_window_energy": np.full((model.rank, len(valid)), np.nan),
+              "high_k_energy_fraction": np.full((model.rank, len(valid)), np.nan),
+              "feature_counts": target.sum(axis=0),
               "full_counts": target.sum(axis=1), "high_k_counts": selected.sum(axis=1)}
     for mode, contrast in enumerate(individual_mode_contrasts(model, scores, ideal, pn)):
         if not np.isfinite(contrast[target]).all():
@@ -79,6 +81,9 @@ def physical_mode_energy(model, scores, ideal, pn, valid, high_k_mask):
             count = mask.sum(axis=1)
             arrays[region + "_window_energy"][mode] = np.divide(np.where(mask, squared, 0.).sum(axis=1), count,
                 out=np.full(len(count), np.nan), where=count > 0)
+        total_energy = squared.sum(axis=1)
+        arrays["high_k_energy_fraction"][mode] = np.divide(np.where(selected, squared, 0.).sum(axis=1), total_energy,
+            out=np.full(len(valid), np.nan), where=total_energy > 0)
     metadata = {"definition": "squared one-score reconstruction minus zero-score reconstruction",
         "additive_contrasts": model.metadata["method"] in ("complete", "masked")
                               and model.metadata["representation"] in ("linear", "noise_weighted"),

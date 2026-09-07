@@ -87,6 +87,22 @@ def plot_diagnostics(arrays, metadata, directory):
     lst = arrays["lst_unwrapped_hours"]
     segments = continuous_segments(arrays["window_ids"], np.arange(len(lst)))
     formatter = FuncFormatter(lambda value, _: f"{value % 24:g}")
+    if metadata.get("physical_mode_energy", {}).get("available"):
+        for mode, mean_squared in enumerate(arrays["mode_mean_squared_contrast"]):
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), layout="constrained")
+            image = plane(axes[0], np.sqrt(mean_squared).reshape(shape), "RMS one-mode residual contrast")
+            fig.colorbar(image, ax=axes[0], label=units)
+            for region, label_region, color in (("full", "Full modeled plane", "C0"),
+                                                 ("high_k", r"$k_\parallel > 0.3\,h$ Mpc$^{-1}$", "C1")):
+                rms = np.sqrt(arrays[f"mode_{region}_window_energy"][mode])
+                for index, segment in enumerate(segments):
+                    axes[1].plot(lst[segment], rms[segment], ".-", color=color,
+                                 label=label_region if index == 0 else None)
+            axes[1].xaxis.set_major_formatter(formatter)
+            axes[1].set(xlabel="Physical LST (hours)", ylabel=f"RMS residual contrast ({units})")
+            axes[1].legend(fontsize=8)
+            fig.suptitle(f"{label} · mode {mode + 1} · conditional decoder response")
+            save(fig, f"physical-mode-{mode + 1:02d}")
     for mode in range(arrays["scores"].shape[1]):
         values = arrays["scores"][:, mode]
         fig, axes = plt.subplots(2, 2, figsize=(11, 7), layout="constrained")

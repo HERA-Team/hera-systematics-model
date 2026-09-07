@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 
 from .baselines import baseline_inventory, mode_localization
-from .scoring import score_predictions, training_mean
+from .scoring import CandidateFailure, score_predictions, training_mean
 from .statistics import score_diagnostics, summary, surrogate_gaussianity
 from .views import analysis_view, geometry_masks
 
@@ -57,6 +57,18 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
         warnings.simplefilter("ignore", RuntimeWarning)
         output["median_noise"] = np.nanmedian(np.where(samples.valid, samples.pn, np.nan), axis=0)
     model = descriptive.models["descriptive"][0]
+    from .reconstruction import physical_mode_energy
+
+    try:
+        energy_arrays, energy_metadata = physical_mode_energy(model, output["scores"], ideal, pn, valid,
+            np.broadcast_to(samples.kparallel > .3, shape).ravel())
+        output.update({"mode_" + key: value for key, value in energy_arrays.items()})
+        energy_metadata.update(available=model.rank > 0, kparallel_threshold=.3,
+                               kparallel_units="h Mpc^-1", energy_units=f"({identity['power_units']})^2")
+        energy_metadata["mode_summaries"] = [{name: summary(energy_arrays[name][mode]) for name in
+            ("full_window_energy", "high_k_window_energy", "high_k_energy_fraction")} for mode in range(model.rank)]
+    except CandidateFailure as error:
+        energy_metadata = {"available": False, "reason": str(error)}
     modes = {"available": False, "reason": "rank-zero model has no components"}
     if model.rank and model.metadata["method"] != "kernel":
         output["components"] = model.components[:model.rank].copy()
@@ -83,7 +95,7 @@ def residual_diagnostics(samples, descriptive, evaluation, n_surrogates=1000, se
         output[name] = evaluation.arrays[name].copy()
     metadata = {"identity": identity, "purpose": "residual_diagnostics", "selected": descriptive.metadata["selected"],
         "evaluation_complete": evaluation.metadata["complete"], "candidates": evaluation.metadata["candidates"],
-        "modes": modes, "score_diagnostics": score_report,
+        "modes": modes, "physical_mode_energy": energy_metadata, "score_diagnostics": score_report,
         "baseline_inventory": baseline_inventory(samples), "regions": regions, "folds": evaluation.metadata["folds"],
         "noise_assumption": samples.metadata["noise_model"], "horizon_definition": "baseline group length divided by speed of light",
         "horizon_buffer_ns": 500., "scores_source": "full-data descriptive fit",

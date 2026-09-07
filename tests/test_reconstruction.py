@@ -40,6 +40,10 @@ def test_linear_physical_mode_energy_uses_measured_noise_once_and_retains_covera
     assert metadata["high_k_valid_cells"] == 40 * 15 - 1
     assert metadata["additive_contrasts"] and not metadata["additive_energy"]
     np.testing.assert_allclose(values["high_k_window_energy"][0, 0], np.mean(contrasts[0][0, 15:29] ** 2))
+    selected_energy = np.sum(contrasts[0][0, 15:29] ** 2)
+    full_energy = np.sum(contrasts[0][0, :29] ** 2)
+    np.testing.assert_allclose(values["high_k_energy_fraction"][0, 0], selected_energy / full_energy)
+    np.testing.assert_equal(values["feature_counts"][-1], 39)
 
 
 @pytest.mark.parametrize("method", ["zero", "mean"])
