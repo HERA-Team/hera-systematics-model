@@ -54,3 +54,36 @@ def test_cornerturn_rejects_duplicate_or_absent_baselines(tmp_path):
     duplicate.write_bytes(path.read_bytes())
     with pytest.raises(ValueError):
         cornerturn_baselines([path, duplicate], [(0, 1)], tmp_path / "duplicate-out")
+
+
+def test_explicit_unprojected_uvw_correction_preserves_numerical_samples(tmp_path):
+    import h5py
+
+    data = visibility(2459000. + np.array([0., 10.]) / 86400)
+    data.data_array[:] = 3 + 4j
+    path = tmp_path / "chunk.uvh5"
+    data.write_uvh5(path)
+    with h5py.File(path, "r+") as handle:
+        handle["Header/uvw_array"][0] += [80., 0., 0.]
+    result = cornerturn_baselines([path], [(0, 1)], tmp_path / "corrected", uvw_policy="recalculate_unprojected")
+    product = result["products"][0]
+    assert product["geometry"]["changed_rows"] == 1
+    np.testing.assert_allclose(product["geometry"]["maximum_uvw_change_m"], 80.)
+    output = UVData.from_file(product["output"]["path"])
+    output.check(strict_uvw_antpos_check=True)
+    np.testing.assert_allclose(output.uvw_array, data.uvw_array, atol=1e-12)
+    for name in ("data_array", "flag_array", "nsample_array", "time_array", "lst_array"):
+        np.testing.assert_equal(getattr(output, name), getattr(data, name))
+
+
+def test_uvw_correction_refuses_phased_data_and_loaded_visibility_payloads():
+    from hera_systematics_model.visibility_geometry import recalculate_unprojected_uvws
+
+    data = visibility(2459000. + np.array([0., 10.]) / 86400)
+    with pytest.raises(ValueError, match="metadata-only"):
+        recalculate_unprojected_uvws(data)
+    metadata = data.copy(metadata_only=True)
+    for entry in metadata.phase_center_catalog.values():
+        entry["cat_type"] = "sidereal"
+    with pytest.raises(ValueError, match="unprojected"):
+        recalculate_unprojected_uvws(metadata)

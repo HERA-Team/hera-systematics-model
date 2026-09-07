@@ -78,7 +78,7 @@ def run_cornerturn(args):
     baselines = json.loads(Path(args.baselines).read_text())
     if not isinstance(baselines, list) or any(not isinstance(pair, list) for pair in baselines):
         raise ValueError("a JSON list of physical antenna pairs is required")
-    result = cornerturn_baselines(read_paths(args.files), baselines, args.output_dir)
+    result = cornerturn_baselines(read_paths(args.files), baselines, args.output_dir, uvw_policy=args.uvw_policy)
     write_json_exclusive(Path(args.output_dir) / "verification.json", result)
     print(json.dumps({"passed": result["passed"], "products": len(result["products"]),
                       "output_dir": str(Path(args.output_dir).resolve())}))
@@ -113,6 +113,7 @@ def add_commands(commands):
     cornerturn = commands.add_parser("cornerturn", help="Stream exact visibility rows into exclusive baseline files")
     for name in ("files", "baselines", "output-dir"):
         cornerturn.add_argument("--" + name, required=True)
+    cornerturn.add_argument("--uvw-policy", choices=("preserve", "recalculate_unprojected"), default="preserve")
     cornerturn.set_defaults(function=run_cornerturn)
     ideal = commands.add_parser("ideal", help="Construct and verify source-supported ideal visibilities")
     operations = ideal.add_subparsers(dest="operation", required=True)

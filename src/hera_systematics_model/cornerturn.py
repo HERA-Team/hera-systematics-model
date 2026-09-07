@@ -9,7 +9,7 @@ from .production import write_json_exclusive
 from .visibility_inventory import inventory_visibilities
 
 
-def cornerturn_baselines(inputs, baselines, output_dir):
+def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
     """Write each physical row once and verify data, flags and counts after writing.
 
     Metadata for the full time span stays in memory. Only one visibility chunk
@@ -18,6 +18,8 @@ def cornerturn_baselines(inputs, baselines, output_dir):
     import h5py
     from pyuvdata import UVData
 
+    if uvw_policy not in ("preserve", "recalculate_unprojected"):
+        raise ValueError("unsupported cornerturn UVW policy")
     baselines = [tuple(pair) for pair in baselines]
     if (not baselines or len(set(baselines)) != len(baselines)
             or any(len(pair) != 2 or any(type(ant) is not int or ant < 0 for ant in pair) for pair in baselines)):
@@ -38,7 +40,8 @@ def cornerturn_baselines(inputs, baselines, output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=False, parents=True)
     manifest = output_dir / "cornerturn-inputs.json"
-    write_json_exclusive(manifest, {"schema_version": 1, "inputs": identities, "baseline_pairs": baselines})
+    write_json_exclusive(manifest, {"schema_version": 1, "inputs": identities, "baseline_pairs": baselines,
+                                    "uvw_policy": uvw_policy})
     manifest_identity = file_identity(manifest)
     parts = [UVData.from_file(path, read_data=False) for path in files]
     full = parts[0]
@@ -57,11 +60,19 @@ def cornerturn_baselines(inputs, baselines, output_dir):
         keys = list(zip(metadata.time_array.tolist(), metadata.ant_1_array.tolist(), metadata.ant_2_array.tolist()))
         if len(set(keys)) != len(keys):
             raise ValueError("duplicate physical input row")
+        original_uvws = metadata.uvw_array.copy()
+        geometry = {"policy": "preserve", "physical_geometry_check": False}
+        if uvw_policy == "recalculate_unprojected":
+            from .visibility_geometry import recalculate_unprojected_uvws
+
+            geometry = recalculate_unprojected_uvws(metadata)
+            metadata.history += "\nUnprojected UVW metadata recalculated from antenna positions and physical row identities."
         output = output_dir / f"zen.LST.baseline.{pair[0]}_{pair[1]}.sum.uvh5"
         metadata.history += "\nVisibility rows regrouped by physical baseline and time without averaging."
         metadata.initialize_uvh5_file(output, clobber=False, data_write_dtype="c16")
         writers[pair] = {"metadata": metadata, "output": output, "positions": {key: i for i, key in enumerate(keys)},
-                         "written": np.zeros(len(keys), bool), "valid_cells": 0, "first": True}
+                         "written": np.zeros(len(keys), bool), "valid_cells": 0, "first": True,
+                         "original_uvws": original_uvws, "geometry": geometry}
     del full
     for entry in entries:
         available_here = {tuple(pair) for pair in inventory["baseline_inventories"][entry["baseline_inventory"]]}
@@ -86,7 +97,8 @@ def cornerturn_baselines(inputs, baselines, output_dir):
                 raise ValueError("missing or duplicate cornerturn row")
             metadata = writer["metadata"]
             for name in ("time_array", "lst_array", "integration_time", "uvw_array"):
-                if not np.array_equal(header[name][rows], getattr(metadata, name)[indices]):
+                expected = writer["original_uvws"] if name == "uvw_array" else getattr(metadata, name)
+                if not np.array_equal(header[name][rows], expected[indices]):
                     raise ValueError("cornerturn row metadata mismatch")
             for name in ("freq_array", "polarization_array"):
                 if not np.array_equal(header[name].ravel(), getattr(metadata, name).ravel()):
@@ -115,7 +127,7 @@ def cornerturn_baselines(inputs, baselines, output_dir):
                 raise ValueError("cornerturn output metadata changed")
         result = {"schema_version": 1, "output": file_identity(writer["output"]), "inputs": manifest_identity,
                   "baseline_pair": list(pair), "rows": len(writer["written"]), "valid_cells": writer["valid_cells"],
-                  "all_rows_written": True, "numerical_samples_preserved": True}
+                  "all_rows_written": True, "numerical_samples_preserved": True, "geometry": writer["geometry"]}
         write_json_exclusive(writer["output"].with_suffix(".json"), result)
         products.append(result)
     for before in identities:
