@@ -35,6 +35,7 @@ hera-systematics inventory --files references.json --output inventory.json
 hera-systematics ideal map --references references.json --source source.uvh5 --output baselines.json
 hera-systematics ideal chunk --reference reference.uvh5 --sources source-files.json --mapping baselines.json --output ideal.uvh5
 hera-systematics ideal verify --reference reference.uvh5 --product ideal.uvh5 --output verification.json
+hera-systematics ideal batch --chunks chunks.json --reference-inventory inventory.json --mapping baselines.json --output-dir ideal-chunks
 hera-systematics cornerturn --files ideal-chunks.json --baselines antenna-pairs.json --output-dir baseline-files
 ```
 
@@ -52,6 +53,12 @@ Entirely unsupported chunks fail acceptance. Cornerturning accepts antenna
 pairs such as `[[0, 1], [6, 34]]`, preserves exact data, flags, counts and time
 gaps, and writes each output row once. It requires a new output directory and
 produces an input manifest, per-file sidecars and a verification record.
+An ideal batch uses a deterministic chunk inventory with explicit source files
+and measured reference metadata. Add `--baselines antenna-pairs.json` to exercise
+a selected subset. Repeated inputs are hashed before first consumption and
+again before batch acceptance; intermediate lookups check file identity and
+change timestamps. Each chunk retains its own verification product. These
+temporary hash caches are never reused across tasks or executions.
 
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 

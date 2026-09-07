@@ -85,6 +85,26 @@ def run_cornerturn(args):
     return 0
 
 
+def run_batch(args):
+    from .ideal_batch import prepare_chunks, construct_batch
+
+    inventory = json.loads(Path(args.chunks).read_text())
+    reference = json.loads(Path(args.reference_inventory).read_text())
+    mapping = json.loads(Path(args.mapping).read_text())
+    if mapping.get("schema_version") != 1 or not isinstance(mapping.get("baselines"), dict):
+        raise ValueError("unsupported baseline mapping schema")
+    selected = json.loads(Path(args.baselines).read_text()) if args.baselines else None
+
+    def progress(phase, count, value):
+        if phase == "chunk" or count % 100 == 0:
+            print(json.dumps({"phase": phase, "count": count}), flush=True)
+
+    result = construct_batch(prepare_chunks(inventory, reference, selected), mapping["baselines"],
+                             args.output_dir, progress=progress)
+    print(json.dumps({"passed": result["passed"], "chunks": len(result["chunks"])}))
+    return 0
+
+
 def add_commands(commands):
     inventory = commands.add_parser("inventory", help="Inventory physical UVH5 metadata from an explicit JSON file list")
     inventory.add_argument("--files", required=True)
@@ -104,6 +124,11 @@ def add_commands(commands):
     for name in ("reference", "sources", "mapping", "output"):
         chunk.add_argument("--" + name, required=True)
     chunk.set_defaults(function=run_chunk)
+    batch = operations.add_parser("batch", help="Construct an explicit immutable chunk inventory")
+    for name in ("chunks", "reference-inventory", "mapping", "output-dir"):
+        batch.add_argument("--" + name, required=True)
+    batch.add_argument("--baselines", help="Optional JSON list of physical antenna pairs")
+    batch.set_defaults(function=run_batch)
     verify = operations.add_parser("verify", help="Check ideal coordinates, validity, counts and file identities")
     for name in ("reference", "product", "output"):
         verify.add_argument("--" + name, required=True)
