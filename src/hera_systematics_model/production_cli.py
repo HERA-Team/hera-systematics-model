@@ -26,7 +26,7 @@ def run_define(args):
 def run_submit(args):
     from .scheduler import submit_task
 
-    result = submit_task(args.run, args.task, args.python, args.package_source, args.partition)
+    result = submit_task(args.run, args.task, args.python, args.package_source, args.partition, afterok=args.afterok)
     print(json.dumps(result, allow_nan=False))
     return 0
 
@@ -62,6 +62,7 @@ def add_commands(commands):
     submit.add_argument("--python", required=True)
     submit.add_argument("--package-source", required=True)
     submit.add_argument("--partition", default="hera")
+    submit.add_argument("--afterok", action="append", default=[], help="Recorded predecessor job that must succeed first")
     submit.set_defaults(function=run_submit)
     acceptance = operations.add_parser("verify", help="Require scheduler success and verified products")
     acceptance.add_argument("--run", required=True)

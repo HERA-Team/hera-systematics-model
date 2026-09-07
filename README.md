@@ -60,6 +60,12 @@ again before batch acceptance; intermediate lookups check file identity and
 change timestamps. Each chunk retains its own verification product. These
 temporary hash caches are never reused across tasks or executions.
 
+Scheduler submissions accept repeated `--afterok JOB_ID` arguments for recorded
+predecessors. Such jobs can be queued while their predecessors run, because
+Slurm permits them to start only after every predecessor succeeds. All other
+queued jobs count toward the conservative CPU, memory and two-job overlap
+limits. Storage reservations include every queued task, including predecessors.
+
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 
 ```bash

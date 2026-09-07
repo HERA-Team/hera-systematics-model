@@ -50,3 +50,37 @@ def test_submission_is_single_and_uncertain_dispatch_cannot_retry(tmp_path, monk
         submit_task(run, "baseline-2", "/usr/bin/python3", tmp_path)
     with pytest.raises(ValueError, match="reconciliation"):
         submit_task(run, "baseline-2", "/usr/bin/python3", tmp_path)
+
+
+def test_dependencies_allow_only_nonoverlapping_predecessors_and_keep_storage_reservations(tmp_path, monkeypatch):
+    run = create_run(tmp_path / "runs", "a" * 40, {}, [])
+    active = []
+    calls = []
+    monkeypatch.setattr(scheduler.subprocess, "check_output", lambda *a, **k: "\n".join(active))
+
+    def dispatch(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout=str(100 + len(calls)), stderr="")
+
+    monkeypatch.setattr(scheduler.subprocess, "run", dispatch)
+    for index in (1, 2, 3, 4):
+        definition = {**task(), "name": f"baseline-{index}"}
+        define_task(run, definition)
+    submit_task(run, "baseline-1", "/usr/bin/python3", tmp_path)
+    active.append("101|hsm-a-one|1|1G")
+    submit_task(run, "baseline-2", "/usr/bin/python3", tmp_path)
+    active.append("102|hsm-a-two|1|1G")
+    with pytest.raises(ValueError, match="aggregate"):
+        submit_task(run, "baseline-3", "/usr/bin/python3", tmp_path)
+    with pytest.raises(ValueError, match="recorded"):
+        submit_task(run, "baseline-3", "/usr/bin/python3", tmp_path, afterok=["999"])
+    record = submit_task(run, "baseline-3", "/usr/bin/python3", tmp_path, afterok=["101"])
+    assert "--dependency=afterok:101" in calls[-1]
+    assert record["afterok"] == ["101"]
+    assert [j["job_id"] for j in record["potentially_simultaneous"]] == ["102"]
+    assert record["storage"]["projected_additional_bytes"] == 3 * task()["projected_bytes"]
+    with pytest.raises(ValueError, match="dependencies changed"):
+        submit_task(run, "baseline-3", "/usr/bin/python3", tmp_path)
+    active.append("103|hsm-a-three|1|1G")
+    with pytest.raises(ValueError, match="aggregate"):
+        submit_task(run, "baseline-4", "/usr/bin/python3", tmp_path, afterok=["102"])

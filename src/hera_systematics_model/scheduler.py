@@ -41,10 +41,13 @@ def require_resources(active, requested):
         raise ValueError("aggregate active task resources exceed limits")
 
 
-def submit_task(run, name, python, package_source, partition="hera"):
+def submit_task(run, name, python, package_source, partition="hera", afterok=()):
     """Reserve one task under a workflow-wide lock; never submit it twice."""
     run = Path(run).resolve()
     task = load_task(run, name)
+    dependencies = sorted(set(map(str, afterok)))
+    if len(dependencies) != len(afterok) or any(not value.isdigit() for value in dependencies):
+        raise ValueError("unique scheduler dependency identifiers are required")
     state = read_run(run)
     root = run.parent
     submissions = run / "submissions"
@@ -56,24 +59,34 @@ def submit_task(run, name, python, package_source, partition="hera"):
             existing = json.loads(marker.read_text())
             if existing.get("task_digest") != digest_json(task) or existing.get("run_digest") != state["identity_digest"]:
                 raise ValueError("submission identity changed")
+            if existing.get("afterok", []) != dependencies:
+                raise ValueError("submission dependencies changed")
             if "job_id" in existing:
                 return existing
             raise ValueError("submission outcome requires reconciliation")
         queue = subprocess.check_output(["squeue", "--me", "--noheader", "--format=%i|%j|%C|%m"], text=True)
         active = queued_resources(queue)
-        require_resources(active, task["resources"])
         ids = {job["job_id"] for job in active}
         reservation = 0
         found = set()
+        known_jobs = set()
         for path in root.glob("*/submissions/*.json"):
             if path.name.endswith(".dispatch.json"):
                 continue
             record = json.loads(path.read_text())
+            if record.get("job_id"):
+                known_jobs.add(record["job_id"])
             if record.get("job_id") in ids:
                 reservation += record["projected_bytes"]
                 found.add(record["job_id"])
         if found != ids:
             raise ValueError("active workflow jobs lack storage reservations")
+        if not set(dependencies).issubset(known_jobs):
+            raise ValueError("dependencies must identify recorded workflow jobs")
+        # These predecessors must finish successfully before the new job can
+        # run. All other queued jobs are conservatively treated as overlapping.
+        simultaneous = [job for job in active if job["job_id"] not in dependencies]
+        require_resources(simultaneous, task["resources"])
         storage = require_storage(root, reservation + task["projected_bytes"])
         worker = ["env", f"PYTHONPATH={Path(package_source).resolve()}", "PYTHONDONTWRITEBYTECODE=1",
                   "OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1", "MKL_NUM_THREADS=1",
@@ -83,9 +96,12 @@ def submit_task(run, name, python, package_source, partition="hera"):
             f"--job-name=hsm-{run.name[:8]}-{name}", f"--cpus-per-task={resources['cpus']}",
             f"--mem={resources['memory_mib']}M", f"--time={resources['hours']}:00:00",
             f"--output={submissions / (name + '.slurm.log')}", f"--chdir={run}", "--wrap", shlex.join(worker)]
+        if dependencies:
+            command.insert(1, "--dependency=afterok:" + ":".join(dependencies))
         record = {"command": command, "projected_bytes": task["projected_bytes"],
                   "task_digest": digest_json(task), "run_digest": state["identity_digest"],
-                  "resources": resources, "active_at_submission": active, "storage": storage}
+                  "resources": resources, "active_at_submission": active, "storage": storage,
+                  "afterok": dependencies, "potentially_simultaneous": simultaneous}
         # A reservation written before dispatch makes an uncertain reply non-retryable.
         write_json_exclusive(marker, record)
         process = subprocess.run(command, capture_output=True, text=True, check=False)
