@@ -92,6 +92,10 @@ def build_paired(corrupted, ideal, quorum=0.95):
     metadata = {**corrupted.metadata,
                 "sources": {"corrupted": corrupted.metadata["sources"], "ideal": ideal.metadata["sources"]},
                 "noise_model": "corrupted_diagonal_independent_baselines_and_delay_sides",
+                "window_membership_sources": {"corrupted": corrupted.metadata.get("window_membership_source"),
+                                              "ideal": ideal.metadata.get("window_membership_source")},
+                "window_membership_source_unavailable_reason": None if all(record.metadata.get("window_membership_source")
+                    for record in (corrupted, ideal)) else "one or both records were constructed without an export file",
                 "quorum": quorum, "matching": matching,
                 "excluded_window_ids": sorted(set(all_windows.tolist()) - set(windows.tolist())),
                 "omitted_delay_s": [float(value) for idx, value in enumerate(corrupted.delay_s)

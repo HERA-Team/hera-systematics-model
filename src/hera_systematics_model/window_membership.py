@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .artifacts import read_artifact, write_artifact
+from .artifacts import canonical_json, read_artifact, write_artifact
 from .configuration import digest_json
 
 
@@ -48,8 +48,11 @@ class WindowMemberships:
         required = {"spectrum_source", "native_time_source", "n_interleaves", "averaging_configuration"}
         if (not required.issubset(self.metadata) or not self.metadata["spectrum_source"]
                 or not self.metadata["native_time_source"] or type(self.metadata["n_interleaves"]) is not int
-                or self.metadata["n_interleaves"] <= 0):
+                or self.metadata["n_interleaves"] <= 0
+                or not isinstance(self.metadata["averaging_configuration"], dict)
+                or not self.metadata["averaging_configuration"]):
             raise ValueError("averaging provenance is required")
+        canonical_json(self.metadata)
 
     @property
     def keys(self):

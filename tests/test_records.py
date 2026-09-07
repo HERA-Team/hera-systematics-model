@@ -19,7 +19,8 @@ def records():
         metadata={"spw": 0, "polarization": "pI", "power_units": "mK2 Mpc3 / h3",
                   "cosmology": {"name": "test"}, "sources": [{"path": "synthetic"}],
                   "window_anchor_jd": grid.anchor_jd, "window_seconds": grid.window_seconds,
-                  "native_grid_digest": "0" * 64},
+                  "native_grid_digest": "0" * 64, "n_interleaves": 1,
+                  "averaging_configuration": {"native_samples": 3}},
         native_ids=np.array([[0, 1, 2], [0, 1, 2], [6, 7, 8], [6, 7, 8]]),
     )
 
@@ -45,7 +46,8 @@ def test_unmatched_are_reported(records):
 
 
 @pytest.mark.parametrize("key,value", [("spw", 1), ("power_units", "Jy"),
-                                        ("cosmology", {"name": "different"})])
+                                        ("cosmology", {"name": "different"}), ("n_interleaves", 2),
+                                        ("averaging_configuration", {"native_samples": 2})])
 def test_identity_metadata_mismatch(records, key, value):
     other = replace(records, metadata={**records.metadata, key: value})
     with pytest.raises(ValueError, match="metadata mismatch"):

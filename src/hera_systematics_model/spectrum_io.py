@@ -10,6 +10,24 @@ from .records import SpectrumRecords
 from .statistics import summary
 
 
+def bind_memberships(spectrum_path, membership_path, baseline_ids, times, grid):
+    """Require an export tied to this exact spectrum, including its row identities."""
+    from .window_membership import WindowMemberships
+
+    membership = WindowMemberships.load(membership_path)
+    if membership.metadata["spectrum_source"] != file_identity(spectrum_path):
+        raise ValueError("native memberships were exported for a different spectral product")
+    ids, native = membership.lookup(baseline_ids, times)
+    if not np.array_equal(ids, grid.assign(times)):
+        raise ValueError("exported window identities disagree with the shared grid")
+    return ids, native, {"native_grid_digest": membership.native_grid_digest,
+        "native_time_source": membership.metadata["native_time_source"],
+        "n_interleaves": membership.metadata["n_interleaves"],
+        "averaging_configuration": membership.metadata["averaging_configuration"],
+        "window_membership_source": [file_identity(p) for p in
+                                      (membership_path, Path(membership_path).with_suffix(".json"))]}
+
+
 def pair_identity(pair):
     return ":".join(f"{int(a)}_{int(b)}" for a, b in pair)
 
@@ -60,8 +78,11 @@ def reference_groups(path, group="stokespol", spectrum="interleave_averaged", to
             "length_tolerance_m": tolerance_m, "baselines": mapping}
 
 
-def read_records(path, spw, grid, grouping, role, polarization="pI", group="stokespol", spectrum="interleave_averaged"):
+def read_records(path, spw, grid, grouping, role, polarization="pI", group="stokespol",
+                 spectrum="interleave_averaged", memberships=None):
     """Read only the requested window and polarization; reject absent products."""
+    if memberships is None:
+        raise ValueError("an exact native averaging export is required")
     import h5py
     import hera_pspec as hp
     from hera_pspec import uvpspec_utils as utils
@@ -110,12 +131,13 @@ def read_records(path, spw, grid, grouping, role, polarization="pI", group="stok
         noise[:, :, 0] if noise is not None else None, uvp.nsample_array[spw][:, 0],
         uvp.integration_array[spw][:, 0], uvp.wgt_array[spw][:, :, :, 0], role == "corrupted")
     times = uvp.time_avg_array[indices]
+    window_ids, native_ids, averaging = bind_memberships(path, memberships, baseline_ids, times, grid)
     z = uvp.cosmo.f2z(np.mean(uvp.freq_array[uvp.spw_to_freq_indices(spw)]))
-    return SpectrumRecords(power[indices], pn[indices], valid[indices], grid.assign(times),
+    return SpectrumRecords(power[indices], pn[indices], valid[indices], window_ids,
         np.asarray(baseline_ids), np.asarray(group_ids), times, uvp.lst_avg_array[indices], np.asarray(lengths),
         np.asarray(lengths) * uvp.cosmo.bl_to_kperp(z, little_h=True), uvp.get_dlys(spw), uvp.get_kparas(spw),
-        {"spw": int(spw), "polarization": polarization, "power_units": units, "cosmology": cosmology,
+        {**averaging, "spw": int(spw), "polarization": polarization, "power_units": units, "cosmology": cosmology,
          "sources": [file_identity(path)], "window_anchor_jd": grid.anchor_jd, "window_seconds": grid.window_seconds,
          "role": role, "power_component": "real", "noise_component": "real", "unmapped_baseline_ids": sorted(omitted),
          "grouping_input": grouping["input"], "length_tolerance_m": grouping["length_tolerance_m"],
-         "sample_counts": summary(uvp.nsample_array[spw][indices, 0])})
+         "sample_counts": summary(uvp.nsample_array[spw][indices, 0])}, native_ids=native_ids)

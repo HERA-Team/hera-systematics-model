@@ -62,6 +62,10 @@ class SpectrumRecords:
             if (not isinstance(digest, str) or len(digest) != 64
                     or any(value not in "0123456789abcdef" for value in digest)):
                 raise ValueError("native reference grid identity is required")
+            if (type(self.metadata.get("n_interleaves")) is not int or self.metadata["n_interleaves"] <= 0
+                    or not isinstance(self.metadata.get("averaging_configuration"), dict)
+                    or not self.metadata["averaging_configuration"]):
+                raise ValueError("native averaging configuration is required")
             for row in self.native_ids:
                 present = row[row >= 0]
                 if (not len(present) or np.any(np.diff(present) <= 0)
@@ -135,7 +139,7 @@ def matched_indices(corrupted, ideal):
     if not corrupted.native_ids.shape[1] or not ideal.native_ids.shape[1]:
         raise ValueError("native averaging memberships are required for residual matching")
     for key in ("spw", "polarization", "power_units", "cosmology",
-                "window_anchor_jd", "window_seconds", "native_grid_digest"):
+                "window_anchor_jd", "window_seconds", "native_grid_digest", "n_interleaves", "averaging_configuration"):
         if canonical_json(corrupted.metadata[key]) != canonical_json(ideal.metadata[key]):
             raise ValueError(f"branch metadata mismatch: {key}")
     for key, atol in (("delay_s", 1e-15), ("kparallel", 1e-12)):
