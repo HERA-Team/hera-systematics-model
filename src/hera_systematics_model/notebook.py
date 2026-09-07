@@ -42,10 +42,12 @@ def execute_spectrum(notebook, configuration, single_baseline, output_dir, nativ
     """Execute with this interpreter; errors propagate to the compute worker."""
     import papermill
     import nbformat
+    from .notebook_labels import instrument_labels
 
     output_dir = Path(output_dir).resolve()
     parameters = notebook_parameters(notebook, configuration, single_baseline, output_dir)
     document = nbformat.read(notebook, as_version=4)
+    document, label_metadata = instrument_labels(document)
     averaging = None
     if native_grid is not None:
         from .notebook_averaging import instrument_averaging
@@ -67,7 +69,7 @@ def execute_spectrum(notebook, configuration, single_baseline, output_dir, nativ
     write_json_exclusive(output_dir / "execution.json", {"parameters": parameters,
         "notebook": file_identity(notebook), "instrumented_notebook": file_identity(instrumented),
         "single_baseline": file_identity(single_baseline), "python": sys.executable,
-        "native_averaging": averaging})
+        "native_averaging": averaging, "label_metadata": label_metadata})
     previous = os.environ.get("JUPYTER_PATH")
     os.environ["JUPYTER_PATH"] = str(kernel_root) + (os.pathsep + previous if previous else "")
     try:

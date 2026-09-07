@@ -26,6 +26,16 @@ def spectral_products(directory, baseline_pair_code, native_times, native_width)
             or np.any(np.diff(native) <= 0)):
         raise ValueError("complete ordered native windows required")
     products, counts = [], {}
+    execution = json.loads((directory / "execution.json").read_text())
+    if "label_metadata" in execution:
+        if execution["label_metadata"] != {"policy": "collapse_identical_labels_after_final_time_average",
+                                           "report": "label-metadata.json"}:
+            raise ValueError("unknown spectral label normalization")
+        products.append(verify_product(directory, {"path": "label-metadata.json", "kind": "file"}))
+        labels = json.loads((directory / "label-metadata.json").read_text())
+        if (labels.get("schema_version") != 1 or labels.get("passed") is not True
+                or labels.get("numerical_payload_modified") is not False):
+            raise ValueError("spectral label normalization report failed")
     for filename, name in (("spectrum.pspec.h5", "interleave_averaged"),
                            ("spectrum.tavg.pspec.h5", "time_and_interleave_averaged")):
         group_name = "stokespol/" + name
