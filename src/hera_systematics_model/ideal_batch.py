@@ -48,7 +48,7 @@ def prepare_chunks(chunk_inventory, reference_inventory, baselines=None):
     return sorted(result, key=lambda item: (item["reference_metadata"]["times_jd"][0], item["reference"]))
 
 
-def construct_batch(chunks, mapping, output_dir, progress=None):
+def construct_batch(chunks, mapping, output_dir, progress=None, expected_identities=None):
     """Construct all declared chunks, retaining each check and any failure."""
     if not chunks or len({chunk["output"] for chunk in chunks}) != len(chunks):
         raise ValueError("a nonempty batch with unique outputs is required")
@@ -56,7 +56,8 @@ def construct_batch(chunks, mapping, output_dir, progress=None):
     output_dir.mkdir(parents=True, exist_ok=False)
     write_json_exclusive(output_dir / "chunk-tasks.json", {"schema_version": 1, "chunks": chunks})
     results, notice_counts = [], {}
-    with VerifiedInputs(output_dir / "input-verification.json", progress=progress) as inputs:
+    with VerifiedInputs(output_dir / "input-verification.json", progress=progress,
+                        expected_identities=expected_identities) as inputs:
         for index, chunk in enumerate(chunks):
             inputs.identity(chunk["reference"])
             measured = visibility_header(chunk["reference"])

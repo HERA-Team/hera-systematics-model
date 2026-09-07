@@ -45,9 +45,18 @@ def test_batch_acceptance_requires_reverified_inputs_and_retains_chunk_checks(tm
     mapping = {"0_1": {"reference_pair": [0, 1], "source_pair": [0, 1], "stored_pair": [0, 1],
                        "conjugate": False, "exclusion": None}}
     output = tmp_path / "products"
-    result = construct_batch(prepare_chunks(chunks, inventory), mapping, output)
+    from hera_systematics_model.configuration import file_identity
+
+    expected = [file_identity(source_path), file_identity(reference_path)]
+    result = construct_batch(prepare_chunks(chunks, inventory), mapping, output, expected_identities=expected)
     assert result["passed"] and result["chunks"][0]["totals"]["valid_cells"] == 16
     assert json.loads((output / "input-verification.json").read_text())["hash_checks_per_input"] == 2
     assert (output / "ideal.verification.json").exists()
     with pytest.raises(FileExistsError):
         construct_batch(prepare_chunks(chunks, inventory), mapping, output)
+    source_path.write_bytes(source_path.read_bytes() + b"changed source payload")
+    changed_output = tmp_path / "changed-input"
+    with pytest.raises(ValueError, match="differs from accepted"):
+        construct_batch(prepare_chunks(chunks, inventory), mapping, changed_output, expected_identities=expected)
+    assert not (changed_output / "ideal.uvh5").exists()
+    assert not json.loads((changed_output / "input-verification.json").read_text())["passed"]

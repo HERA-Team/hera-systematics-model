@@ -64,3 +64,40 @@ def test_final_hash_and_child_failures_cannot_produce_acceptance(tmp_path, monke
             inputs.identity(source)
             raise RuntimeError("child failed")
     assert json.loads(report.read_text())["failure"] == "child failed"
+
+
+def test_accepted_inventory_is_checked_before_first_consumption(tmp_path):
+    from hera_systematics_model.configuration import file_identity, digest_json
+
+    source, other = tmp_path / "source", tmp_path / "other"
+    source.write_text("original")
+    other.write_text("another")
+    expected = [file_identity(source)]
+    report = tmp_path / "passed.json"
+    with VerifiedInputs(report, expected_identities=expected) as inputs:
+        assert inputs.identity(source) == expected[0]
+    assert json.loads(report.read_text())["expected_inventory_digest"] == digest_json(expected)
+    source.write_text("modified")
+    report = tmp_path / "changed.json"
+    with pytest.raises(ValueError, match="differs from accepted"):
+        with VerifiedInputs(report, expected_identities=expected) as inputs:
+            inputs.identity(source)
+    assert not json.loads(report.read_text())["passed"]
+    report = tmp_path / "unlisted.json"
+    with pytest.raises(ValueError, match="absent from accepted"):
+        with VerifiedInputs(report, expected_identities=expected) as inputs:
+            inputs.identity(other)
+    assert not json.loads(report.read_text())["passed"]
+
+
+def test_expected_inventory_rejects_duplicates_and_invalid_hashes(tmp_path):
+    from hera_systematics_model.configuration import file_identity
+
+    source = tmp_path / "source"
+    source.write_text("input")
+    identity = file_identity(source)
+    for entries in ([], [identity, identity], [{**identity, "sha256": "invalid"}],
+                    [{**identity, "bytes": -1}], [{**identity, "path": "relative"}]):
+        with pytest.raises(ValueError):
+            VerifiedInputs(tmp_path / "report.json", expected_identities=entries)
+    assert not (tmp_path / "report.json").exists()

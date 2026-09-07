@@ -59,6 +59,11 @@ a selected subset. Repeated inputs are hashed before first consumption and
 again before batch acceptance; intermediate lookups check file identity and
 change timestamps. Each chunk retains its own verification product. These
 temporary hash caches are never reused across tasks or executions.
+Use `ideal batch --input-identities accepted-inputs.jsonl` to require each
+consumed reference and source hash to match an accepted inventory before the
+first read. Each JSONL row contains canonical absolute `path`, `bytes` and
+`sha256` fields. An unlisted or changed input fails before it is consumed;
+the verification report records the expected inventory digest.
 
 Scheduler submissions accept repeated `--afterok JOB_ID` arguments for recorded
 predecessors. Such jobs can be queued while their predecessors run, because

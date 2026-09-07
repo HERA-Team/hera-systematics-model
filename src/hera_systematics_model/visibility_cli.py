@@ -99,8 +99,11 @@ def run_batch(args):
         if phase == "chunk" or count % 100 == 0:
             print(json.dumps({"phase": phase, "count": count}), flush=True)
 
+    expected = None
+    if args.input_identities:
+        expected = [json.loads(line) for line in Path(args.input_identities).read_text().splitlines() if line.strip()]
     result = construct_batch(prepare_chunks(inventory, reference, selected), mapping["baselines"],
-                             args.output_dir, progress=progress)
+                             args.output_dir, progress=progress, expected_identities=expected)
     print(json.dumps({"passed": result["passed"], "chunks": len(result["chunks"])}))
     return 0
 
@@ -128,6 +131,7 @@ def add_commands(commands):
     batch = operations.add_parser("batch", help="Construct an explicit immutable chunk inventory")
     for name in ("chunks", "reference-inventory", "mapping", "output-dir"):
         batch.add_argument("--" + name, required=True)
+    batch.add_argument("--input-identities", help="Accepted JSONL file identities required before input consumption")
     batch.add_argument("--baselines", help="Optional JSON list of physical antenna pairs")
     batch.set_defaults(function=run_batch)
     verify = operations.add_parser("verify", help="Check ideal coordinates, validity, counts and file identities")
