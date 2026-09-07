@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
-from hera_systematics_model.spectrum_io import bind_memberships, pair_identity, read_records, spectral_measurements
+from hera_systematics_model.spectrum_io import bind_memberships, pair_identity, read_records, spectral_measurements, selected_window_index
 from hera_systematics_model.configuration import file_identity
 from hera_systematics_model.records import WindowGrid
 from test_window_membership import membership
@@ -40,6 +41,39 @@ def test_noise_sign_or_absence_cannot_be_silently_repaired():
 def test_reader_requires_an_export_before_loading_the_io_stack():
     with pytest.raises(ValueError, match="exact native averaging export"):
         read_records("absent.h5", 0, None, None, "ideal")
+
+
+def selected_window(index=0):
+    return SimpleNamespace(spw_array=np.array([index]), folded=False,
+        freq_array=np.array([130e6, 131e6, 132e6]), dly_array=np.array([-1e-6, 0., 1e-6]),
+        spw_freq_array=np.full(3, index), spw_dly_array=np.full(3, index))
+
+
+@pytest.mark.parametrize("index", [0, 6, 13])
+def test_selected_window_accepts_local_reindexing_only_with_exact_coordinates(index):
+    uvp = selected_window(index)
+    assert selected_window_index(uvp, uvp.freq_array, uvp.dly_array) == index
+    with pytest.raises(ValueError, match="coordinates differ"):
+        selected_window_index(uvp, uvp.freq_array + 1e6, uvp.dly_array)
+    with pytest.raises(ValueError, match="coordinates differ"):
+        selected_window_index(uvp, uvp.freq_array, uvp.dly_array * 2)
+
+
+@pytest.mark.parametrize("name,value", [("folded", True), ("spw_array", np.array([0, 1])),
+    ("spw_array", np.array([-1])), ("spw_freq_array", np.array([0, 0, 1])),
+    ("spw_dly_array", np.array([], int))])
+def test_ambiguous_selected_window_is_rejected(name, value):
+    uvp = selected_window()
+    setattr(uvp, name, value)
+    with pytest.raises(ValueError):
+        selected_window_index(uvp, uvp.freq_array, uvp.dly_array)
+
+
+@pytest.mark.parametrize("coordinates", [[], [1., 1.], [np.nan], [[1.]], [2., 1.], [-1.]])
+def test_invalid_requested_window_is_rejected(coordinates):
+    uvp = selected_window()
+    with pytest.raises(ValueError, match="coordinates are invalid"):
+        selected_window_index(uvp, coordinates, uvp.dly_array)
 
 
 def test_membership_export_is_bound_to_exact_spectral_content(tmp_path):

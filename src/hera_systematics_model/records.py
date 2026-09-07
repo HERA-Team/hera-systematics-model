@@ -102,6 +102,11 @@ class SpectrumRecords:
         if not required.issubset(self.metadata):
             raise ValueError("missing record metadata")
         canonical_json(self.metadata)
+        if "frequency_hz" in self.metadata:
+            frequency = np.asarray(self.metadata["frequency_hz"], dtype=float)
+            if (frequency.ndim != 1 or not len(frequency) or not np.isfinite(frequency).all()
+                    or np.any(frequency <= 0) or np.any(np.diff(frequency) <= 0)):
+                raise ValueError("invalid frequency coordinates")
         if (type(self.metadata["spw"]) is not int or self.metadata["spw"] < 0
                 or not self.metadata["sources"] or not self.metadata["cosmology"]
                 or any(not isinstance(self.metadata[k], str) or not self.metadata[k].strip()
@@ -138,6 +143,8 @@ def matched_indices(corrupted, ideal):
     """Return a one-to-one physical join and explicit unmatched row counts."""
     if not corrupted.native_ids.shape[1] or not ideal.native_ids.shape[1]:
         raise ValueError("native averaging memberships are required for residual matching")
+    if canonical_json(corrupted.metadata.get("frequency_hz")) != canonical_json(ideal.metadata.get("frequency_hz")):
+        raise ValueError("branch frequency coordinates are absent or different")
     for key in ("spw", "polarization", "power_units", "cosmology",
                 "window_anchor_jd", "window_seconds", "native_grid_digest", "n_interleaves", "averaging_configuration"):
         if canonical_json(corrupted.metadata[key]) != canonical_json(ideal.metadata[key]):

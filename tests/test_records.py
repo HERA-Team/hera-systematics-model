@@ -45,6 +45,16 @@ def test_unmatched_are_reported(records):
     assert report["corrupted_unmatched_rows"] == 2
 
 
+def test_frequency_coordinates_match_independently_of_reader_local_index(records):
+    left = replace(records, metadata={**records.metadata, "spw": 6,
+                   "frequency_hz": [130e6, 131e6], "reader_spw_index": 0})
+    right = replace(left, metadata={**left.metadata, "reader_spw_index": 6})
+    assert matched_indices(left, right)[2]["matched_rows"] == 4
+    for frequency in (None, [130e6, 132e6]):
+        with pytest.raises(ValueError, match="frequency coordinates"):
+            matched_indices(left, replace(right, metadata={**right.metadata, "frequency_hz": frequency}))
+
+
 @pytest.mark.parametrize("key,value", [("spw", 1), ("power_units", "Jy"),
                                         ("cosmology", {"name": "different"}), ("n_interleaves", 2),
                                         ("averaging_configuration", {"native_samples": 2})])
