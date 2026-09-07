@@ -109,6 +109,16 @@ native row identifiers, actual interleave centroids and resulting spectrum
 centroids to `window-memberships.npz`. A merged export must cover each source
 exactly and is rebound to the merged spectrum's verified file identity.
 
+The notebook runner also normalizes repeated label metadata immediately after
+the final full-time average. This operation requires a single physical row
+and identical integer label indices along the remaining interleave axis.
+Distinct labels or invalid indices fail execution. Only the label arrays and
+their history entry change; spectral data, noise, weights and coordinates are
+preserved. `label-metadata.json` retains both original and resulting label
+arrays, and `execution.json` declares this operation. Per-baseline acceptance
+hashes the report and still requires every output axis to match its physical
+dimensions. Existing source notebooks and retained spectra are read-only.
+
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 
 ```bash
@@ -176,6 +186,11 @@ must contain an unchanged acceptance receipt with identical code, resolved runti
 parameters, native grid and consumed-file identities. Reuse reads existing files
 without overwriting them. All consumed inputs and accepted outputs are hashed
 again before the batch verification record is written.
+
+The parent and notebook capture resolved distribution inventories after the
+same scientific imports. Their complete runtime digests must agree, including
+import-visible bundled dependencies. A zero command exit does not establish
+product acceptance; command exits and completion checks are recorded separately.
 
 `replay --samples paired.npz --evaluation evaluation.npz --output replay.json`
 checks saved predictor-only coefficients, decoded target predictions, coverage,
