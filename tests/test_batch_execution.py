@@ -49,3 +49,14 @@ def test_duplicate_physical_task_names_are_rejected_before_writing(tmp_path):
     with pytest.raises(ValueError, match="duplicate"):
         run_bounded_commands([task("a", "pass"), task("a", "pass")], tmp_path / "batch", 1, 2, 16384)
     assert not (tmp_path / "batch").exists()
+
+
+def test_failed_product_acceptance_stops_new_launches_despite_zero_exit(tmp_path):
+    def reject(record, directory):
+        assert record["exit_code"] == 0 and directory.is_dir()
+        return {**record, "status": "verification_failed"}
+
+    result = run_bounded_commands([task("a", "pass"), task("b", "pass")],
+        tmp_path / "batch", 1, 2, 16384, on_completion=reject)
+    assert not result["all_commands_exited_zero"]
+    assert result["records"][1]["status"] == "not_started"

@@ -37,7 +37,7 @@ def validate_batch(tasks, workers, allocated_cpus, allocated_memory_mib,
 
 
 def run_bounded_commands(tasks, directory, workers, allocated_cpus, allocated_memory_mib,
-                         cpus_per_command=2, memory_per_command_mib=16384):
+                         cpus_per_command=2, memory_per_command_mib=16384, on_completion=None):
     """Drain active commands after failure, retaining outputs and launch order.
 
     Threads only supervise subprocesses; interpreter and notebook state stay
@@ -81,6 +81,8 @@ def run_bounded_commands(tasks, directory, workers, allocated_cpus, allocated_me
             for future in completed:
                 index = active.pop(future)
                 records[index] = future.result()
+                if on_completion is not None:
+                    records[index] = on_completion(records[index], directory / tasks[index]["name"])
                 failed |= records[index]["status"] != "exited_zero"
     report = {"resources": reservation, "records": records, "launched_commands": launched,
               "all_commands_exited_zero": not failed and launched == len(tasks),

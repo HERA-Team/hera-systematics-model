@@ -29,6 +29,7 @@ def products(tmp_path):
         {"spectrum_source": file_identity(raw), "native_time_source": inputs["native_grid"],
          "n_interleaves": 2, "averaging_configuration": {"width": 2}}).save(directory / "window-memberships.npz")
     identity = {"code_commit": "a" * 40, "source_digest": "b" * 64, "configuration": {},
+        "runtime_digest": digest_json({"source_digest": "b" * 64}),
         "inputs": inputs, "baseline_pair_code": 106134106134, "native_grid_digest": digest_json(native.tolist())}
     execution = {"notebook": inputs["notebook"], "single_baseline": inputs["single_baseline"],
         "parameters": {"SINGLE_BL_FILE": inputs["single_baseline"]["path"],

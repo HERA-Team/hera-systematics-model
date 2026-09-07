@@ -66,9 +66,10 @@ def spectral_products(directory, baseline_pair_code, native_times, native_width)
 
 def validate_entry_identity(directory, identity, native_times, input_context=None):
     """Check recorded roles against consumed files and notebook execution state."""
-    required = {"code_commit", "source_digest", "configuration", "inputs", "baseline_pair_code", "native_grid_digest"}
+    required = {"code_commit", "source_digest", "runtime_digest", "configuration", "inputs", "baseline_pair_code", "native_grid_digest"}
     if (set(identity) != required or not re.match(r"[0-9a-f]{40}\Z", identity["code_commit"])
             or not re.match(r"[0-9a-f]{64}\Z", identity["source_digest"])
+            or not re.match(r"[0-9a-f]{64}\Z", identity["runtime_digest"])
             or identity["native_grid_digest"] != digest_json(np.asarray(native_times).tolist())
             or not isinstance(identity["configuration"], dict) or not isinstance(identity["inputs"], dict)
             or not {"notebook", "single_baseline", "auto", "native_grid", "beam", "fringe_rate_cache"} <= set(identity["inputs"])):
@@ -82,9 +83,10 @@ def validate_entry_identity(directory, identity, native_times, input_context=Non
     parameters = {**identity["configuration"], "SINGLE_BL_FILE": identity["inputs"]["single_baseline"]["path"],
         "OUT_PSPEC_FILE": str(directory / "spectrum.pspec.h5"),
         "OUT_TAVG_PSPEC_FILE": str(directory / "spectrum.tavg.pspec.h5")}
+    runtime = json.loads((directory / "import-runtime.json").read_text())["runtime"]
     if (execution["parameters"] != parameters or execution["notebook"] != identity["inputs"]["notebook"]
             or execution["single_baseline"] != identity["inputs"]["single_baseline"]
-            or json.loads((directory / "import-runtime.json").read_text())["runtime"]["source_digest"] != identity["source_digest"]):
+            or runtime["source_digest"] != identity["source_digest"] or digest_json(runtime) != identity["runtime_digest"]):
         raise ValueError("spectral execution used different inputs, configuration or code")
 
 

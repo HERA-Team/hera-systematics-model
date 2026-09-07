@@ -143,6 +143,23 @@ constant profiles within native bins; they do not equate spectral window functio
 Rank-zero and kernel fits report unavailable linear-component comparisons while
 retaining conditional physical-mode energy measurements above 0.3 h Mpc^-1.
 
+`spectra batch --inventory batch.json --output-dir batch-products --workers 4`
+runs inside an existing Slurm allocation. Each concurrent command reserves two
+CPUs and 16 GiB; four workers therefore require eight CPUs and 64 GiB. The outer
+production runner still enforces aggregate job and storage limits. Inventory
+schema version 1 contains `code_commit`, `notebook`, `native_grid`, `configuration`
+and `baselines`. Each baseline entry supplies its integer `baseline_pair_code`,
+absolute visibility `file` and adjacent `auto` path. The configuration explicitly
+names `EFIELD_HEALPIX_BEAM_FILE` and `FR_SPECTRA_FILE` alongside notebook parameters.
+
+Baseline entries run in sorted physical-code order. Each completed command is
+verified before replacement work launches; a failed command or product stops new
+launches while active commands finish. An optional baseline `reuse` directory
+must contain an unchanged acceptance receipt with identical code, resolved runtime,
+parameters, native grid and consumed-file identities. Reuse reads existing files
+without overwriting them. All consumed inputs and accepted outputs are hashed
+again before the batch verification record is written.
+
 Evaluation uses four outer physical-time folds and three inner folds, with
 withheld feature regions for coefficient inference. Final descriptive fits
 use separate inner selection and carry training statistics only. Model

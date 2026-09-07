@@ -44,9 +44,27 @@ def run_records(args):
     return 0
 
 
+def run_batch(args):
+    import os
+    from .spectral_batch import run_spectral_batch
+
+    if not os.environ.get("SLURM_JOB_ID"):
+        raise ValueError("spectral batch execution requires a scheduler allocation")
+    result = run_spectral_batch(args.inventory, args.output_dir, args.workers,
+        int(os.environ["SLURM_CPUS_PER_TASK"]), int(os.environ["SLURM_MEM_PER_NODE"]))
+    print(json.dumps({"output_dir": str(Path(args.output_dir).resolve()), "passed": result["passed"],
+                      "baselines": len(result["baselines"])}))
+    return 0 if result["passed"] else 2
+
+
 def add_commands(commands):
     parser = commands.add_parser("spectra", help="Inventory, merge and convert spectral products")
     actions = parser.add_subparsers(dest="spectral_command", required=True)
+    batch = actions.add_parser("batch", help="Run a bounded baseline batch with explicit verified reuse")
+    batch.add_argument("--inventory", required=True)
+    batch.add_argument("--output-dir", required=True)
+    batch.add_argument("--workers", type=int, default=1, choices=range(1, 5))
+    batch.set_defaults(function=run_batch)
     merge = actions.add_parser("merge", help="Merge a complete baseline inventory and native exports")
     for name in ("inventory", "output", "memberships-output"):
         merge.add_argument("--" + name, required=True)
