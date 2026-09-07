@@ -59,7 +59,24 @@ def run_plot(args):
     return 0
 
 
+def run_cross_spw(args):
+    from .cross_spw import cross_spw_diagnostics
+
+    arrays, metadata = cross_spw_diagnostics(PairedSamples.load(args.left_samples),
+        PairedSamples.load(args.right_samples), Evaluation.load(args.left_fit), Evaluation.load(args.right_fit))
+    metadata.update(runtime=capture_runtime(), inputs=input_identities(
+        [args.left_samples, args.right_samples, args.left_fit, args.right_fit]))
+    write_artifact(args.output, "diagnostics", arrays, metadata)
+    print(json.dumps({"output": str(Path(args.output).resolve()), "complete": metadata["complete"],
+                      "mode_similarity_available": metadata["mode_similarity"]["available"]}))
+    return 0
+
+
 def add_commands(commands):
+    cross = commands.add_parser("cross-spw", help="Compare saved modes on matched physical coordinates")
+    for name in ("left-samples", "right-samples", "left-fit", "right-fit", "output"):
+        cross.add_argument("--" + name, required=True)
+    cross.set_defaults(function=run_cross_spw)
     diagnostic = commands.add_parser("diagnostics", help="Measure residual and mode diagnostics")
     diagnostic.add_argument("--samples", required=True)
     diagnostic.add_argument("--fit", required=True)

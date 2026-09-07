@@ -134,6 +134,15 @@ use guard 12. Sample identities and all other configuration fields must match.
 Outer choices and target partitions remain fixed; preprocessing and model fits
 use the new training support. Both primary artifact hashes are recorded.
 
+`cross-spw --left-samples left.npz --right-samples right.npz --left-fit left-fit.npz
+--right-fit right-fit.npz --output comparison.npz` compares saved descriptive
+fits. Exact native delay-center matching and conservative common-bin comparisons
+have separate arrays and coverage counts. Signed-component and squared-loading
+similarities are distinct. Bin comparisons retain overlap weights and assume
+constant profiles within native bins; they do not equate spectral window functions.
+Rank-zero and kernel fits report unavailable linear-component comparisons while
+retaining conditional physical-mode energy measurements above 0.3 h Mpc^-1.
+
 Evaluation uses four outer physical-time folds and three inner folds, with
 withheld feature regions for coefficient inference. Final descriptive fits
 use separate inner selection and carry training statistics only. Model
