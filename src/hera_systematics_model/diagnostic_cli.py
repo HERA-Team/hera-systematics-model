@@ -98,7 +98,21 @@ def run_summary(args):
     return 0 if complete else 2
 
 
+def run_localized_inventory(args):
+    from .localized import localized_inventory
+    from .production import write_json_exclusive
+
+    result = localized_inventory(args.samples, args.fit)
+    write_json_exclusive(Path(args.output), result)
+    print(json.dumps({"output": str(Path(args.output).resolve()), "tasks": len(result["tasks"])}))
+    return 0
+
+
 def add_commands(commands):
+    localized = commands.add_parser("inventory-localized", help="Inventory both physical slice directions and methods")
+    for name in ("samples", "fit", "output"):
+        localized.add_argument("--" + name, required=True)
+    localized.set_defaults(function=run_localized_inventory)
     summary = commands.add_parser("summary", help="Export numerical evidence across physical-time folds")
     for name in ("fit", "evaluation", "output"):
         summary.add_argument("--" + name, required=True)

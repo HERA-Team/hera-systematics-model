@@ -273,3 +273,15 @@ files before writing this inventory exclusively. Task verification reopens every
 listed file, checks its structure and exact hash, and includes these results in
 the receipt. Duplicate, recursive, self-referencing, and out-of-directory entries
 are rejected. Artifact readers still validate model-specific scientific schemas.
+
+`hera-systematics inventory-localized --samples samples.npz --fit fit.npz --output slices.json`
+creates an exclusive, deterministic inventory for every fixed-group and fixed-delay
+slice. It requires a complete full-plane descriptive fit with guard 12 and matching
+sample hashes and physical identities. Each slice has separate complete-feature
+and masked configurations using the selected representation family, ranks through
+20 subject to support, four outer and three inner blocks, and five feature bands.
+Fixed-group slices use a two-delay-bin predictor guard; fixed-delay slices use a
+one-group guard. Kernel candidates are excluded from these localized PCA runs.
+The inventory records coordinates and configuration digests. Localized ranks and
+training-derived transform parameters are selected within each run; their evidence
+is conditional on the full-plane representation choice.
