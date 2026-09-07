@@ -67,6 +67,43 @@ predecessor relationships bound every possible CPU, memory and two-job overlap;
 independent queued jobs are conservatively treated as simultaneous. Storage
 reservations include every queued task, including predecessors.
 
+Spectral conversion requires native-sample membership exported during the
+actual averaging operation. Matching row counts or rounded centroids is
+insufficient. The spectral commands expose verified merging and per-window
+record conversion:
+
+```bash
+hera-systematics spectra merge --inventory spectra.json --output merged.h5 --memberships-output merged-windows.npz
+hera-systematics spectra groups --spectrum corrupted-merged.h5 --output length-groups.json
+hera-systematics spectra records --spectrum corrupted-merged.h5 --native-grid native-grid.json --grouping length-groups.json --memberships corrupted-windows.npz --role corrupted --spw 0 --output corrupted-spw0.npz
+```
+
+The merge inventory has `schema_version: 1` and an `inputs` list. Each entry
+contains `spectrum` and `memberships` file paths plus an integer
+`baseline_pair_code`. Every declared baseline must occur exactly once. All
+14 spectral windows, polarization order, delay/frequency coordinates, units,
+cosmology and normalization must agree. Inputs are sorted by physical baseline;
+their native row order is preserved. The writer uses bounded data blocks,
+reopens the completed file, and compares every copied value exactly, including
+nonfinite data support. Partial outputs are retained and cannot be overwritten.
+
+The `.merge.npz` and `.merge.json` sidecars preserve source histories and
+baseline-specific header values, such as fringe-rate corrections, with exact
+source-file identities. Only header values common to all inputs become shared
+merged-header attributes. Numerical source attributes remain in NPZ arrays,
+including unavailable numerical values. The `.inputs.json` report records
+successful input hashes before and after consumption. `hera-systematics verify`
+on the merge NPZ also verifies its bound HDF5 file and input report.
+
+The native-grid JSON contains `schema_version: 1`, `policy` (`shared` or
+`retained`), monotonic `native_time_jd`, `anchor_jd`, `window_seconds`,
+`native_samples_per_window`, and source identities in `sources`. Shared mode
+requires complete windows and the exact same native time array in each input.
+The captured notebook runner accepts `--native-grid`; it exports the consumed
+native row identifiers, actual interleave centroids and resulting spectrum
+centroids to `window-memberships.npz`. A merged export must cover each source
+exactly and is rebound to the merged spectrum's verified file identity.
+
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 
 ```bash
