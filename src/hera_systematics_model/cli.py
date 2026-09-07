@@ -58,6 +58,28 @@ def run_pair(args):
     return 0
 
 
+def run_replay(args):
+    from .configuration import AnalysisConfig, file_identity
+    from .evaluation import Evaluation
+    from .evaluation_replay import replay_evaluation
+    from .production import write_json_exclusive
+    from .samples import PairedSamples
+    from .views import analysis_view
+
+    samples, evaluation = PairedSamples.load(args.samples), Evaluation.load(args.evaluation)
+    config = AnalysisConfig(**evaluation.metadata["configuration"])
+    arrays, _, identity = analysis_view(samples, config.group, config.delay)
+    if (identity != evaluation.metadata["identity"] or file_identity(args.samples) != evaluation.metadata["input"]
+            or file_identity(Path(args.samples).with_suffix(".json")) != evaluation.metadata["input_metadata"]):
+        raise ValueError("replay source samples or physical feature identities differ")
+    result = replay_evaluation(arrays, samples.window_ids, evaluation, config.training_filter(samples))
+    result["inputs"] = [file_identity(p) for name in (args.samples, args.evaluation)
+                        for p in (Path(name), Path(name).with_suffix(".json"))]
+    write_json_exclusive(Path(args.output), result)
+    print(json.dumps({"passed": result["passed"], "evaluation_complete": result["evaluation_complete"]}))
+    return 0 if result["evaluation_complete"] else 2
+
+
 def run_verify(args):
     from .artifacts import read_artifact
     from .evaluation import Evaluation
@@ -97,6 +119,10 @@ def main(argv=None):
     add_visibility(commands)
     from .spectrum_cli import add_commands as add_spectra
     add_spectra(commands)
+    replay = commands.add_parser("replay", help="Reproduce saved inference and losses without refitting modes")
+    for name in ("samples", "evaluation", "output"):
+        replay.add_argument("--" + name, required=True)
+    replay.set_defaults(function=run_replay)
     pair = commands.add_parser("pair", help="Join and fold two spectrum-record artifacts")
     pair.add_argument("--corrupted", required=True)
     pair.add_argument("--ideal", required=True)

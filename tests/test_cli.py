@@ -51,6 +51,9 @@ def test_cli_frozen_guard_binds_samples_and_primary_artifacts(tmp_path, paired):
     result = Evaluation.load(sensitivity)
     assert result.metadata["selection_input"]["sha256"]
     assert not result.metadata["primary_selection"]["hyperparameter_selection_repeated"]
+    replay = tmp_path / "replay.json"
+    assert main(["replay", "--samples", str(source), "--evaluation", str(sensitivity), "--output", str(replay)]) == 0
+    assert json.loads(replay.read_text())["passed"]
     config.write_text(json.dumps({**values, "guard": 8, "region": "horizon"}))
     with pytest.raises(SystemExit) as error:
         main(arguments + ["--selection-from", str(primary), "--output", str(tmp_path / "bad.npz")])

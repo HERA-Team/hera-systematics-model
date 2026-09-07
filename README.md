@@ -160,6 +160,14 @@ parameters, native grid and consumed-file identities. Reuse reads existing files
 without overwriting them. All consumed inputs and accepted outputs are hashed
 again before the batch verification record is written.
 
+`replay --samples paired.npz --evaluation evaluation.npz --output replay.json`
+checks saved predictor-only coefficients, decoded target predictions, coverage,
+and selected/zero/mean physical-window losses against the bound paired samples.
+It does not refit bases or repeat selection. Prediction checks use relative
+tolerance 1e-10 plus 1e-10 times the recorded corrupted noise; coefficient and
+loss tolerances are included in the output. An incomplete evaluation remains
+incomplete even when its available predictions replay successfully.
+
 Evaluation uses four outer physical-time folds and three inner folds, with
 withheld feature regions for coefficient inference. Final descriptive fits
 use separate inner selection and carry training statistics only. Model
