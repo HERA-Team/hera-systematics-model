@@ -127,6 +127,12 @@ file remains read-only. Retained copies count toward the storage reservation.
 The spectral notebook requires an autocorrelation file in the same directory;
 its feed metadata must be compatible as well.
 
+The cornerturn writer checks that every input has the same physical feed
+orientation and writes the equivalent legacy field into each new output before
+streaming data. Its receipt includes `feed_metadata`; a mixed-orientation input
+set fails before output creation. Existing input files are unchanged, and new
+cornerturned files require no separate compatibility copy.
+
 The notebook runner also normalizes repeated label metadata immediately after
 the final full-time average. This operation requires a single physical row
 and identical integer label indices along the remaining interleave axis.

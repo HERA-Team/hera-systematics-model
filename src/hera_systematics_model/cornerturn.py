@@ -17,6 +17,7 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
     """
     import h5py
     from pyuvdata import UVData
+    from .visibility_compatibility import add_legacy_orientation, legacy_orientation
 
     if uvw_policy not in ("preserve", "recalculate_unprojected"):
         raise ValueError("unsupported cornerturn UVW policy")
@@ -37,6 +38,12 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
         raise ValueError("requested baseline is absent from input chunks")
     files = [entry["path"] for entry in entries]
     identities = [file_identity(path) for path in files]
+    orientations = []
+    for path in files:
+        with h5py.File(path, "r") as handle:
+            orientations.append(legacy_orientation(handle["Header"]))
+    if len(set(orientations)) != 1:
+        raise ValueError("cornerturn input feed orientations differ")
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=False, parents=True)
     manifest = output_dir / "cornerturn-inputs.json"
@@ -70,9 +77,13 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
         output = output_dir / f"zen.LST.baseline.{pair[0]}_{pair[1]}.sum.uvh5"
         metadata.history += "\nVisibility rows regrouped by physical baseline and time without averaging."
         metadata.initialize_uvh5_file(output, clobber=False, data_write_dtype="c16")
+        with h5py.File(output, "r+") as handle:
+            feed_metadata = add_legacy_orientation(handle["Header"])
+            if feed_metadata["x_orientation"] != orientations[0]:
+                raise ValueError("cornerturn changed physical feed orientation")
         writers[pair] = {"metadata": metadata, "output": output, "positions": {key: i for i, key in enumerate(keys)},
                          "written": np.zeros(len(keys), bool), "valid_cells": 0, "first": True,
-                         "original_uvws": original_uvws, "geometry": geometry}
+                         "original_uvws": original_uvws, "geometry": geometry, "feed_metadata": feed_metadata}
     del full
     for entry in entries:
         available_here = {tuple(pair) for pair in inventory["baseline_inventories"][entry["baseline_inventory"]]}
@@ -125,9 +136,13 @@ def cornerturn_baselines(inputs, baselines, output_dir, uvw_policy="preserve"):
                      "uvw_array", "freq_array", "polarization_array"):
             if not np.array_equal(getattr(metadata, name), getattr(writer["metadata"], name)):
                 raise ValueError("cornerturn output metadata changed")
+        with h5py.File(writer["output"], "r") as handle:
+            if legacy_orientation(handle["Header"]) != orientations[0]:
+                raise ValueError("cornerturn output feed orientation changed")
         result = {"schema_version": 1, "output": file_identity(writer["output"]), "inputs": manifest_identity,
                   "baseline_pair": list(pair), "rows": len(writer["written"]), "valid_cells": writer["valid_cells"],
-                  "all_rows_written": True, "numerical_samples_preserved": True, "geometry": writer["geometry"]}
+                  "all_rows_written": True, "numerical_samples_preserved": True, "geometry": writer["geometry"],
+                  "feed_metadata": writer["feed_metadata"]}
         write_json_exclusive(writer["output"].with_suffix(".json"), result)
         products.append(result)
     for before in identities:

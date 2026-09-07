@@ -31,6 +31,11 @@ def test_cornerturn_preserves_reordered_baselines_and_real_time_gaps(tmp_path):
     result = cornerturn_baselines(inputs[::-1], [(0, 2), (0, 1)], output)
     assert result["passed"] and len(result["products"]) == 2
     for product in result["products"]:
+        import h5py
+        assert product["feed_metadata"]["x_orientation"] == "east"
+        with h5py.File(product["output"]["path"]) as handle:
+            assert handle["Header/x_orientation"][()] == b"east"
+            assert "feed_angle" in handle["Header"]
         data = UVData.from_file(product["output"]["path"])
         np.testing.assert_equal(data.time_array, times)
         assert product["all_rows_written"] and product["numerical_samples_preserved"]
@@ -87,3 +92,17 @@ def test_uvw_correction_refuses_phased_data_and_loaded_visibility_payloads():
         entry["cat_type"] = "sidereal"
     with pytest.raises(ValueError, match="unprojected"):
         recalculate_unprojected_uvws(metadata)
+
+
+def test_cornerturn_rejects_different_physical_feed_orientations(tmp_path):
+    inputs = []
+    for block, orientation in enumerate(["east", "north"]):
+        data = visibility(2459000. + np.array([block * 20., block * 20. + 10.]) / 86400)
+        data.telescope.set_feeds_from_x_orientation(orientation)
+        path = tmp_path / f"chunk-{block}.uvh5"
+        data.write_uvh5(path)
+        inputs.append(path)
+    output = tmp_path / "baselines"
+    with pytest.raises(ValueError, match="feed orientations differ"):
+        cornerturn_baselines(inputs, [(0, 1)], output)
+    assert not output.exists()

@@ -19,7 +19,7 @@ def legacy_orientation(header):
         feeds = np.asarray(header["feed_array"][()]).astype("U")
         angles = np.asarray(header["feed_angle"][()])
         nants = int(header["Nants_telescope"][()])
-        if feeds.shape != (nants, 2) or angles.shape != feeds.shape or not np.isfinite(angles).all():
+        if nants < 1 or feeds.shape != (nants, 2) or angles.shape != feeds.shape or not np.isfinite(angles).all():
             raise ValueError("invalid per-antenna linear feed metadata")
         if not np.all(np.sort(feeds, axis=1) == ["x", "y"]):
             raise ValueError("legacy orientation requires x and y feeds")
@@ -41,6 +41,16 @@ def legacy_orientation(header):
     return orientation
 
 
+def add_legacy_orientation(header):
+    """Populate equivalent metadata on a newly owned output HDF5 header."""
+    orientation = legacy_orientation(header)
+    added = "x_orientation" not in header
+    if added:
+        header.create_dataset("x_orientation", data=np.bytes_(orientation))
+    return {"x_orientation": orientation,
+            "added_datasets": ["Header/x_orientation"] if added else []}
+
+
 def copy_for_legacy_reader(source, output):
     """Add a derived legacy field to an exclusive copy; verify every old dataset."""
     import h5py
@@ -57,8 +67,7 @@ def copy_for_legacy_reader(source, output):
     with source.open("rb") as reader, output.open("xb") as writer:
         shutil.copyfileobj(reader, writer, length=8 * 1024 * 1024)
     with h5py.File(output, "r+") as handle:
-        if not already_present:
-            handle["Header"].create_dataset("x_orientation", data=np.bytes_(orientation))
+        add_legacy_orientation(handle["Header"])
     checked = []
     with h5py.File(source, "r") as original, h5py.File(output, "r") as copied:
         def compare(name, obj):
