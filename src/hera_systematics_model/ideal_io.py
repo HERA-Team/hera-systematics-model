@@ -6,6 +6,7 @@ import numpy as np
 
 from .configuration import file_identity
 from .ideal import interpolate_supported, periodic_source_order, replace_reference_visibilities
+from .input_verification import input_identity
 from .production import write_json_exclusive
 
 
@@ -62,13 +63,16 @@ def choose_source_files(inventory, target_lsts, buffer_rad):
     return [inventory[index]["path"] for index in selected]
 
 
-def construct_chunk(reference_file, source_files, mapping, output, baselines=None):
+def construct_chunk(reference_file, source_files, mapping, output, baselines=None, input_set=None):
     """Assign visibilities by physical baseline, time and polarization identities."""
     from pyuvdata import UVData
 
     output = Path(output)
     if output.exists() or output.with_suffix(".json").exists():
         raise FileExistsError(output)
+    reference_identity = input_identity(reference_file, input_set)
+    source_files = list(source_files)
+    source_identities = [input_identity(path, input_set) for path in source_files]
     if baselines is not None:
         baselines = sorted(tuple(pair) for pair in baselines)
         if (not baselines or len(set(baselines)) != len(baselines)
@@ -111,11 +115,15 @@ def construct_chunk(reference_file, source_files, mapping, output, baselines=Non
         # sample counts may be zero even when finite, unflagged sky values exist.
         valid = ~source.flag_array[source_rows][:, :, pol_indices] & np.isfinite(data)
         values[rows], supported[rows] = interpolate_supported(knots, data, valid, targets)
-    provenance = {"reference": file_identity(reference_file), "sources": [file_identity(p) for p in source_files],
+    for before in [reference_identity, *source_identities]:
+        if input_identity(before["path"], input_set) != before:
+            raise ValueError("ideal input changed during construction")
+    provenance = {"reference": reference_identity, "sources": source_identities,
                   "baseline_mapping": {baseline_key(pair): mapping[baseline_key(pair)] for pair in sorted(pairs)},
                   "supported_cells": int(supported.sum()), "total_cells": int(supported.size),
                   "source_support_policy": "finite_unflagged_interpolation_knots", "source_counts_used": False,
-                  "reference_baseline_selection": [list(pair) for pair in baselines] if baselines is not None else None}
+                  "reference_baseline_selection": [list(pair) for pair in baselines] if baselines is not None else None,
+                  "batch_input_verification": str(input_set.report_path) if input_set is not None else None}
     result = replace_reference_visibilities(reference, values, supported, source.vis_units, source.history,
                                             "Source file identities are stored in the product JSON sidecar.")
     output.parent.mkdir(parents=True, exist_ok=True)

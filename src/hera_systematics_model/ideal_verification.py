@@ -6,19 +6,20 @@ from pathlib import Path
 import numpy as np
 
 from .configuration import file_identity
+from .input_verification import input_identity
 from .visibility_inventory import visibility_header
 
 
-def verify_ideal_chunk(reference_file, product_file, require_supported=True):
+def verify_ideal_chunk(reference_file, product_file, require_supported=True, input_set=None):
     """Check every cell and source identity against the construction sidecar."""
     import h5py
 
     product_file = Path(product_file)
     provenance = json.loads(product_file.with_suffix(".json").read_text())
-    if provenance["reference"] != file_identity(reference_file) or provenance["output"] != file_identity(product_file):
+    if provenance["reference"] != input_identity(reference_file, input_set) or provenance["output"] != file_identity(product_file):
         raise ValueError("ideal product or reference identity mismatch")
     for item in provenance["sources"]:
-        if item != file_identity(item["path"]):
+        if item != input_identity(item["path"], input_set):
             raise ValueError("ideal source identity mismatch")
     reference, product = visibility_header(reference_file), visibility_header(product_file)
     selection = provenance.get("reference_baseline_selection")

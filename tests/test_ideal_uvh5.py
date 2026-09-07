@@ -22,7 +22,12 @@ def visibility(times, pairs=((0, 1),)):
         vis_units="Jy", update_telescope_from_known=False)
 
 
-def test_model_zero_counts_do_not_erase_finite_source_support(tmp_path):
+@pytest.mark.parametrize("batch", [False, True])
+def test_model_zero_counts_do_not_erase_finite_source_support(tmp_path, batch):
+    from contextlib import nullcontext
+    import json
+    from hera_systematics_model.input_verification import VerifiedInputs
+
     times = 2459000. + np.arange(4) * 10 / 86400
     sources = []
     for part in range(2):
@@ -42,8 +47,13 @@ def test_model_zero_counts_do_not_erase_finite_source_support(tmp_path):
     reference.write_uvh5(path)
     mapping = {"0_1": {"reference_pair": [0, 1], "source_pair": [0, 1], "stored_pair": [0, 1],
                        "conjugate": False, "exclusion": None}}
-    result = construct_chunk(path, sources, mapping, output)
-    verified = verify_ideal_chunk(path, output)
+    context = VerifiedInputs(tmp_path / "inputs.json") if batch else nullcontext(None)
+    with context as inputs:
+        result = construct_chunk(path, sources, mapping, output, input_set=inputs)
+        verified = verify_ideal_chunk(path, output, input_set=inputs)
+    if batch:
+        assert json.loads((tmp_path / "inputs.json").read_text())["passed"]
+        assert result["batch_input_verification"] == str(tmp_path / "inputs.json")
     assert result["source_counts_used"] is False
     assert verified["totals"]["valid_cells"] == 14
     assert verified["totals"]["valid_zero_cells"] == 2
