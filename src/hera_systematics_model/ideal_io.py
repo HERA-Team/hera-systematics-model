@@ -14,6 +14,41 @@ def baseline_key(pair):
     return f"{int(pair[0])}_{int(pair[1])}"
 
 
+def verify_mapping_geometry(reference, source, mapping, tolerance_m=1e-6):
+    """Compare actual source/reference antenna vectors in the desired orientation."""
+    if not np.isfinite(tolerance_m) or tolerance_m <= 0:
+        raise ValueError("a finite positive baseline geometry tolerance is required")
+    positions = []
+    for data in (reference, source):
+        numbers = data.telescope.antenna_numbers
+        enu = np.asarray(data.telescope.get_enu_antpos())
+        if len(set(numbers)) != len(numbers) or enu.shape != (len(numbers), 3) or not np.isfinite(enu).all():
+            raise ValueError("invalid physical antenna geometry")
+        positions.append(dict(zip(numbers, enu)))
+    result = {}
+    for key, entry in mapping.items():
+        if baseline_key(entry["reference_pair"]) != key:
+            raise ValueError("baseline mapping key disagrees with physical identity")
+        result[key] = dict(entry)
+        if entry["source_pair"] is None:
+            continue
+        stored = tuple(entry["stored_pair"])
+        if (type(entry["conjugate"]) is not bool or len(stored) != 2
+                or tuple(entry["source_pair"]) != (stored[::-1] if entry["conjugate"] else stored)):
+            raise ValueError("source baseline orientation disagrees with conjugation state")
+        vectors = []
+        for geometry, pair in zip(positions, (entry["reference_pair"], entry["source_pair"])):
+            if any(antenna not in geometry for antenna in pair):
+                raise ValueError("mapped antenna is absent from physical geometry")
+            vectors.append(geometry[pair[1]] - geometry[pair[0]])
+        difference = float(np.linalg.norm(vectors[0] - vectors[1]))
+        if difference > tolerance_m:
+            raise ValueError("mapped source and reference baseline vectors differ")
+        result[key].update(reference_vector_enu_m=vectors[0].tolist(), source_vector_enu_m=vectors[1].tolist(),
+                           vector_difference_m=difference, vector_tolerance_m=tolerance_m)
+    return result
+
+
 def redundant_baseline_map(reference, source):
     """Map each reference pair uniquely, recording absent source coverage."""
     from hera_cal.red_groups import RedundantGroups
@@ -37,7 +72,7 @@ def redundant_baseline_map(reference, source):
             "stored_pair": list(map(int, stored)) if stored else None,
             "conjugate": mapped != stored,
             "exclusion": None if matches else "source_baseline_absent"}
-    return result
+    return verify_mapping_geometry(reference, source, result)
 
 
 def source_polarizations(source_pols, reference_pols, conjugate=False):
@@ -94,6 +129,7 @@ def construct_chunk(reference_file, source_files, mapping, output, baselines=Non
     actual = source.get_antpairs()
     if any(pair not in actual for pair in requested):
         raise ValueError("source reader did not preserve requested baseline orientation")
+    mapping = verify_mapping_geometry(reference, source, {baseline_key(pair): mapping[baseline_key(pair)] for pair in pairs})
     values = np.full(reference.data_array.shape, np.nan + 1j * np.nan, complex)
     supported = np.zeros(values.shape, bool)
     for pair in pairs:

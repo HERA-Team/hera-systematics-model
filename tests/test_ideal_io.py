@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 
 from hera_systematics_model.artifacts import canonical_json
-from hera_systematics_model.ideal_io import baseline_key, choose_source_files, redundant_baseline_map, source_polarizations
+from hera_systematics_model.ideal_io import baseline_key, choose_source_files, redundant_baseline_map, source_polarizations, verify_mapping_geometry
 
 
 def test_source_selection_is_deterministic_across_wrap_and_input_order():
@@ -34,7 +34,7 @@ def test_mapping_records_absent_baselines_and_integer_identities(monkeypatch):
     monkeypatch.setitem(sys.modules, "hera_cal.red_groups", SimpleNamespace(RedundantGroups=Groups))
     reference = SimpleNamespace(telescope=SimpleNamespace(get_enu_antpos=lambda: np.eye(3), antenna_numbers=np.arange(3)),
                                 get_antpairs=lambda: [(np.int64(0), np.int64(1)), (1, 2)])
-    source = SimpleNamespace(get_antpairs=lambda: [(0, 1)])
+    source = SimpleNamespace(get_antpairs=lambda: [(0, 1)], telescope=reference.telescope)
     result = redundant_baseline_map(reference, source)
     assert result["0_1"]["source_pair"] == [0, 1]
     assert result["0_1"]["stored_pair"] == [0, 1]
@@ -55,3 +55,20 @@ def test_reversed_baselines_exchange_cross_polarization_indices():
     assert source_polarizations([-1, -2, -3, -4], [-1, -2, -3, -4], True) == [0, 1, 3, 2]
     with pytest.raises(ValueError, match="polarization"):
         source_polarizations([-5, -7], [-7], True)
+
+
+def test_actual_source_vector_identity_is_checked_independently_of_labels():
+    def model(positions):
+        return SimpleNamespace(telescope=SimpleNamespace(antenna_numbers=[0, 1], get_enu_antpos=lambda: positions))
+    reference = model(np.array([[0., 0., 0.], [10., 0., 0.]]))
+    source = model(np.array([[100., 0., 0.], [110., 0., 0.]]))
+    mapping = {"0_1": {"reference_pair": [0, 1], "source_pair": [0, 1], "stored_pair": [0, 1], "conjugate": False}}
+    checked = verify_mapping_geometry(reference, source, mapping)
+    assert checked["0_1"]["vector_difference_m"] == 0
+    assert checked["0_1"]["source_vector_enu_m"] == [10., 0., 0.]
+    with pytest.raises(ValueError, match="vectors differ"):
+        verify_mapping_geometry(reference, model(np.array([[0., 0., 0.], [11., 0., 0.]])), mapping)
+    with pytest.raises(ValueError, match="absent"):
+        verify_mapping_geometry(reference, source, {"0_2": {**mapping["0_1"], "reference_pair": [0, 2]}})
+    with pytest.raises(ValueError, match="conjugation"):
+        verify_mapping_geometry(reference, source, {"0_1": {**mapping["0_1"], "stored_pair": [1, 0]}})
