@@ -43,14 +43,30 @@ class SpectrumRecords:
     delay_s: np.ndarray
     kparallel: np.ndarray
     metadata: dict
+    native_ids: np.ndarray | None = None
 
     def __post_init__(self):
         for field in fields(self):
-            if field.name != "metadata":
+            if field.name != "metadata" and getattr(self, field.name) is not None:
                 setattr(self, field.name, np.asarray(getattr(self, field.name)))
         if self.power.ndim != 2 or min(self.power.shape) == 0:
             raise ValueError("records must have nonempty row and delay axes")
         nr, nd = self.power.shape
+        if self.native_ids is None:
+            self.native_ids = np.empty((nr, 0), dtype=np.int64)
+        if (self.native_ids.ndim != 2 or self.native_ids.shape[0] != nr
+                or self.native_ids.dtype.kind not in "iu" or np.any(self.native_ids < -1)):
+            raise ValueError("invalid native averaging member axes")
+        if self.native_ids.shape[1]:
+            digest = self.metadata.get("native_grid_digest", "")
+            if (not isinstance(digest, str) or len(digest) != 64
+                    or any(value not in "0123456789abcdef" for value in digest)):
+                raise ValueError("native reference grid identity is required")
+            for row in self.native_ids:
+                present = row[row >= 0]
+                if (not len(present) or np.any(np.diff(present) <= 0)
+                        or not np.array_equal(row[:len(present)], present)):
+                    raise ValueError("invalid native averaging member order or padding")
         if self.pn.shape != (nr, nd) or self.valid.shape != (nr, nd):
             raise ValueError("power, noise and validity shapes disagree")
         if (self.valid.dtype.kind != "b" or self.power.dtype.kind not in "fiu"
@@ -103,6 +119,7 @@ class SpectrumRecords:
         return list(zip(self.window_ids.tolist(), self.baseline_ids.tolist()))
 
     def save(self, path):
+        self.__post_init__()
         arrays = {field.name: getattr(self, field.name) for field in fields(self)
                   if field.name != "metadata"}
         return write_artifact(path, "spectrum-records", arrays, self.metadata)
@@ -115,8 +132,10 @@ class SpectrumRecords:
 
 def matched_indices(corrupted, ideal):
     """Return a one-to-one physical join and explicit unmatched row counts."""
+    if not corrupted.native_ids.shape[1] or not ideal.native_ids.shape[1]:
+        raise ValueError("native averaging memberships are required for residual matching")
     for key in ("spw", "polarization", "power_units", "cosmology",
-                "window_anchor_jd", "window_seconds"):
+                "window_anchor_jd", "window_seconds", "native_grid_digest"):
         if canonical_json(corrupted.metadata[key]) != canonical_json(ideal.metadata[key]):
             raise ValueError(f"branch metadata mismatch: {key}")
     for key, atol in (("delay_s", 1e-15), ("kparallel", 1e-12)):
@@ -130,11 +149,15 @@ def matched_indices(corrupted, ideal):
         raise ValueError("no common physical samples")
     ci = np.array([cm[key] for key in common], dtype=int)
     ii = np.array([im[key] for key in common], dtype=int)
+    for left, right in zip(corrupted.native_ids[ci], ideal.native_ids[ii]):
+        if not np.array_equal(left[left >= 0], right[right >= 0]):
+            raise ValueError("branch native averaging membership mismatch")
     if not np.array_equal(corrupted.group_ids[ci], ideal.group_ids[ii]):
         raise ValueError("branch group identity mismatch")
     for key in ("baseline_length_m", "kperp"):
         if not np.allclose(getattr(corrupted, key)[ci], getattr(ideal, key)[ii],
                            rtol=1e-10, atol=1e-12):
             raise ValueError(f"branch geometry mismatch: {key}")
-    return ci, ii, {"matched_rows": len(common), "corrupted_unmatched_rows": len(cm) - len(common),
+    return ci, ii, {"matched_rows": len(common), "native_membership_verified": True,
+                    "corrupted_unmatched_rows": len(cm) - len(common),
                     "ideal_unmatched_rows": len(im) - len(common)}

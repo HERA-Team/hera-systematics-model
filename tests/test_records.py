@@ -18,13 +18,15 @@ def records():
         kparallel=np.array([-.1, 0., .1]),
         metadata={"spw": 0, "polarization": "pI", "power_units": "mK2 Mpc3 / h3",
                   "cosmology": {"name": "test"}, "sources": [{"path": "synthetic"}],
-                  "window_anchor_jd": grid.anchor_jd, "window_seconds": grid.window_seconds},
+                  "window_anchor_jd": grid.anchor_jd, "window_seconds": grid.window_seconds,
+                  "native_grid_digest": "0" * 64},
+        native_ids=np.array([[0, 1, 2], [0, 1, 2], [6, 7, 8], [6, 7, 8]]),
     )
 
 
 def reorder(record, order):
     names = ("power", "pn", "valid", "window_ids", "baseline_ids", "group_ids",
-             "time_jd", "lst_rad", "baseline_length_m", "kperp")
+             "time_jd", "lst_rad", "baseline_length_m", "kperp", "native_ids")
     return replace(record, **{key: getattr(record, key)[order] for key in names})
 
 
@@ -63,3 +65,21 @@ def test_reference_grid_does_not_reanchor_a_branch(records):
     assert matched_indices(records, shifted)[2]["matched_rows"] == 4
     with pytest.raises(ValueError, match="centroids"):
         replace(records, time_jd=times + 270 / 86400)
+
+
+def test_same_centroid_bin_cannot_hide_different_native_windows(records):
+    other = replace(records, native_ids=records.native_ids + 1)
+    with pytest.raises(ValueError, match="native averaging membership mismatch"):
+        matched_indices(records, other)
+    old = replace(records, native_ids=None)
+    with pytest.raises(ValueError, match="memberships are required"):
+        matched_indices(records, old)
+    other = replace(records, metadata={**records.metadata, "native_grid_digest": "1" * 64})
+    with pytest.raises(ValueError, match="native_grid_digest"):
+        matched_indices(records, other)
+
+
+def test_native_padding_does_not_change_physical_membership(records):
+    padded = np.pad(records.native_ids, ((0, 0), (0, 2)), constant_values=-1)
+    other = replace(records, native_ids=padded)
+    assert matched_indices(records, other)[2]["native_membership_verified"]
