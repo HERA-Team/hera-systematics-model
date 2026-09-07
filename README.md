@@ -27,6 +27,25 @@ verification with `python -m pytest -q`. CI checks Python 3.10 with NumPy 1.26
 and Python 3.12 with NumPy 2.0. Production I/O environments must be captured
 and verified separately against their retained products.
 
+Visibility I/O commands accept explicit JSON lists of paths. Run large
+inventories, baseline mapping and construction inside accounted Slurm tasks:
+
+```bash
+hera-systematics inventory --files references.json --output inventory.json
+hera-systematics ideal map --references references.json --source source.uvh5 --output baselines.json
+hera-systematics ideal chunk --reference reference.uvh5 --sources source-files.json --mapping baselines.json --output ideal.uvh5
+hera-systematics ideal verify --reference reference.uvh5 --product ideal.uvh5 --output verification.json
+```
+
+The inventory records metadata and array layouts without asserting data
+validity. Ideal construction uses cubic interpolation without extrapolation;
+a source curve with any invalid knot is unavailable for that chunk. Finite
+supported samples, including zeros, receive cleared flags and unit counts.
+Unsupported cells contain an invalid flag and zero count. Integration times
+and physical coordinates are preserved. Reversed baselines use conjugated
+visibility data with exchanged cross-polarizations. The verification command
+checks every output cell, reference coordinates and the recorded file hashes.
+
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 
 ```bash
