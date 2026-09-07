@@ -26,3 +26,21 @@ def test_visibility_file_lists_reject_implicit_or_duplicate_inputs(tmp_path):
         path.write_text(json.dumps(value))
         with pytest.raises(ValueError, match="unique file paths"):
             read_paths(path)
+
+
+def test_cornerturn_command_preserves_explicit_selection(tmp_path, capsys):
+    pytest.importorskip("pyuvdata")
+    from test_ideal_uvh5 import visibility
+
+    source = tmp_path / "source.uvh5"
+    visibility([2459000., 2459000.0001]).write_uvh5(source)
+    files, pairs = tmp_path / "files.json", tmp_path / "pairs.json"
+    files.write_text(json.dumps([str(source)]))
+    pairs.write_text(json.dumps([[0, 1]]))
+    output = tmp_path / "baselines"
+    assert main(["cornerturn", "--files", str(files), "--baselines", str(pairs),
+                 "--output-dir", str(output)]) == 0
+    result = json.loads((output / "verification.json").read_text())
+    assert result["passed"] and len(result["products"]) == 1
+    assert result["products"][0]["baseline_pair"] == [0, 1]
+    assert result["products"][0]["all_rows_written"]

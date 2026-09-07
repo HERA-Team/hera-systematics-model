@@ -35,16 +35,23 @@ hera-systematics inventory --files references.json --output inventory.json
 hera-systematics ideal map --references references.json --source source.uvh5 --output baselines.json
 hera-systematics ideal chunk --reference reference.uvh5 --sources source-files.json --mapping baselines.json --output ideal.uvh5
 hera-systematics ideal verify --reference reference.uvh5 --product ideal.uvh5 --output verification.json
+hera-systematics cornerturn --files ideal-chunks.json --baselines antenna-pairs.json --output-dir baseline-files
 ```
 
 The inventory records metadata and array layouts without asserting data
 validity. Ideal construction uses cubic interpolation without extrapolation;
 a source curve with any invalid knot is unavailable for that chunk. Finite
 supported samples, including zeros, receive cleared flags and unit counts.
+Support is determined by finite unflagged model knots; source sample counts
+are not used because model visibilities need not represent counted observations.
 Unsupported cells contain an invalid flag and zero count. Integration times
 and physical coordinates are preserved. Reversed baselines use conjugated
 visibility data with exchanged cross-polarizations. The verification command
 checks every output cell, reference coordinates and the recorded file hashes.
+Entirely unsupported chunks fail acceptance. Cornerturning accepts antenna
+pairs such as `[[0, 1], [6, 34]]`, preserves exact data, flags, counts and time
+gaps, and writes each output row once. It requires a new output directory and
+produces an input manifest, per-file sidecars and a verification record.
 
 The unified command operates on versioned NPZ artifacts with JSON sidecars:
 

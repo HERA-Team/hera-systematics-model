@@ -72,11 +72,28 @@ def run_verification(args):
     return 0
 
 
+def run_cornerturn(args):
+    from .cornerturn import cornerturn_baselines
+
+    baselines = json.loads(Path(args.baselines).read_text())
+    if not isinstance(baselines, list) or any(not isinstance(pair, list) for pair in baselines):
+        raise ValueError("a JSON list of physical antenna pairs is required")
+    result = cornerturn_baselines(read_paths(args.files), baselines, args.output_dir)
+    write_json_exclusive(Path(args.output_dir) / "verification.json", result)
+    print(json.dumps({"passed": result["passed"], "products": len(result["products"]),
+                      "output_dir": str(Path(args.output_dir).resolve())}))
+    return 0
+
+
 def add_commands(commands):
     inventory = commands.add_parser("inventory", help="Inventory physical UVH5 metadata from an explicit JSON file list")
     inventory.add_argument("--files", required=True)
     inventory.add_argument("--output", required=True)
     inventory.set_defaults(function=run_inventory)
+    cornerturn = commands.add_parser("cornerturn", help="Stream exact visibility rows into exclusive baseline files")
+    for name in ("files", "baselines", "output-dir"):
+        cornerturn.add_argument("--" + name, required=True)
+    cornerturn.set_defaults(function=run_cornerturn)
     ideal = commands.add_parser("ideal", help="Construct and verify source-supported ideal visibilities")
     operations = ideal.add_subparsers(dest="operation", required=True)
     mapping = operations.add_parser("map", help="Build one deterministic redundant-baseline mapping")
