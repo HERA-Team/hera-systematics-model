@@ -60,9 +60,11 @@ def run_stability(args):
 def run_plot(args):
     from .plotting import plot_diagnostics
     from .cross_plotting import plot_cross_spw
+    from .stability_plotting import plot_stability
 
     arrays, metadata = read_artifact(args.artifact, "diagnostics")
-    renderers = {"residual_diagnostics": plot_diagnostics, "cross_spw_diagnostics": plot_cross_spw}
+    renderers = {"residual_diagnostics": plot_diagnostics, "cross_spw_diagnostics": plot_cross_spw,
+                 "block_stability": plot_stability}
     if metadata.get("purpose") not in renderers:
         raise ValueError("a supported diagnostic artifact is required")
     products = renderers[metadata["purpose"]](arrays, metadata, args.output_dir)
