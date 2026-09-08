@@ -286,6 +286,16 @@ The inventory records coordinates and configuration digests. Localized ranks and
 training-derived transform parameters are selected within each run; their evidence
 is conditional on the full-plane representation choice.
 
+`localized_dispatch.collect_localized_tasks(parents)` collects accepted slice
+inventories for all 14 SPWs before returning executable slice identifiers. Each
+parent contains `spw`, an absolute `run` path, and its inventory `task` name.
+The function verifies scheduler acceptance and product receipts, requires both
+methods for every group and delay index, and checks saved configuration hashes,
+dimensions, guards, and representation settings. Its returned catalog contains
+parent acceptances and file identities; it does not submit jobs or reserve
+resources. The execution worker must revalidate its parent and sample identities.
+Use a compute node when product verification requires substantial I/O.
+
 `fringe_cache.copy_with_aliases(source, mapping_file, output, expected_source,
 expected_mapping)` creates an exclusive fringe-rate cache copy for additional
 physical baseline identities. The two expected identities contain absolute
