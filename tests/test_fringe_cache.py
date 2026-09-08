@@ -47,3 +47,68 @@ def test_invalid_geometry_or_source_fails(mutation):
 def test_missing_duplicate_or_ambiguous_cache_fails(groups):
     with pytest.raises(ValueError):
         resolve_cache_aliases(groups, correspondence())
+
+
+def cache_files(tmp_path):
+    import json
+    import h5py
+    import numpy as np
+    source, mapping = tmp_path / 'cache.h5', tmp_path / 'mapping.json'
+    with h5py.File(source, 'w') as f:
+        f.attrs['version'] = 'original'
+        f.create_dataset('metadata/baseline_dimension', data=2)
+        f.create_dataset('metadata/baseline_groups/0', data=[[196, 2]])
+        f.create_dataset('metadata/frequencies_MHz', data=[100., 150.])
+        d = f.create_dataset('erh_mode_power_spectrum', data=np.arange(12.).reshape(6, 2, 1))
+        d.attrs['baseline_dimension'] = 2
+    mapping.write_text(json.dumps({'baseline_mapping': correspondence()}))
+    return source, mapping
+
+
+def test_copy_binds_inputs_preserves_payload_and_rejects_overwrite(tmp_path):
+    import h5py
+    import numpy as np
+    from hera_systematics_model.configuration import file_identity
+    from hera_systematics_model.fringe_cache import copy_with_aliases
+    source, mapping = cache_files(tmp_path)
+    identities = file_identity(source), file_identity(mapping)
+    output = tmp_path / 'extended.h5'
+    result = copy_with_aliases(source, mapping, output, *identities)
+    assert result['passed'] and len(result['aliases']) == 1
+    assert result['spectral_values_changed'] is False
+    with h5py.File(output) as f:
+        np.testing.assert_array_equal(f['erh_mode_power_spectrum'][:], np.arange(12.).reshape(6, 2, 1))
+        assert f['metadata/baseline_groups/0'][:].tolist() == [[196, 2], [0, 326]]
+        assert f.attrs['version'] == 'original'
+    assert (file_identity(source), file_identity(mapping)) == identities
+    with pytest.raises(FileExistsError):
+        copy_with_aliases(source, mapping, output, *identities)
+
+
+def test_copy_rejects_wrong_input_hash_before_output(tmp_path):
+    from hera_systematics_model.configuration import file_identity
+    from hera_systematics_model.fringe_cache import copy_with_aliases
+    source, mapping = cache_files(tmp_path)
+    output = tmp_path / 'extended.h5'
+    with pytest.raises(ValueError, match='identity'):
+        copy_with_aliases(source, mapping, output, {**file_identity(source), 'sha256': '0'*64}, file_identity(mapping))
+    assert not output.exists()
+
+
+def test_copy_detects_changed_payload_and_retains_failed_product(tmp_path, monkeypatch):
+    import h5py
+    import shutil
+    from hera_systematics_model.configuration import file_identity
+    from hera_systematics_model.fringe_cache import copy_with_aliases
+    source, mapping = cache_files(tmp_path)
+    original = shutil.copyfileobj
+    def corrupt(reader, writer, **kwargs):
+        original(reader, writer, **kwargs)
+        writer.flush()
+        with h5py.File(writer.name, 'r+') as f:
+            f['erh_mode_power_spectrum'][0, 0, 0] = -999
+    monkeypatch.setattr(shutil, 'copyfileobj', corrupt)
+    output = tmp_path / 'extended.h5'
+    with pytest.raises(ValueError, match='original values'):
+        copy_with_aliases(source, mapping, output, file_identity(source), file_identity(mapping))
+    assert output.exists() and not output.with_suffix('.aliases.json').exists()

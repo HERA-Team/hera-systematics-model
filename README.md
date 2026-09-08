@@ -285,3 +285,17 @@ one-group guard. Kernel candidates are excluded from these localized PCA runs.
 The inventory records coordinates and configuration digests. Localized ranks and
 training-derived transform parameters are selected within each run; their evidence
 is conditional on the full-plane representation choice.
+
+`fringe_cache.copy_with_aliases(source, mapping_file, output, expected_source,
+expected_mapping)` creates an exclusive fringe-rate cache copy for additional
+physical baseline identities. The two expected identities contain absolute
+paths, byte counts and SHA-256 hashes from verified inputs. The mapping JSON
+contains the geometry-verified `baseline_mapping` emitted by ideal construction.
+Only missing baseline identities can be added. Their source counterparts must
+already occur in the cache, with ENU-vector agreement within 1e-6 metres.
+Reversed source entries receive reversed reference identities, preserving the
+reader's fringe-rate sign convention. Existing memberships, spectra, coordinates
+and attributes are compared against the original in bounded slices. The
+`.aliases.json` receipt records every added pair, orientation, geometry and input
+and output hash. Partial outputs remain on failure without a success receipt.
+Run this operation through Slurm and reserve space for the retained full copy.

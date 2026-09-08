@@ -70,3 +70,85 @@ def resolve_cache_aliases(groups, mapping, tolerance_m=1e-6):
                           'source_vector_enu_m': vectors[1].tolist(),
                           'vector_tolerance_m': declared})
     return additions
+
+
+def copy_with_aliases(source, mapping_file, output, expected_source, expected_mapping):
+    """Create an exclusive cache copy bound to caller-verified input identities.
+
+    Only baseline-group membership datasets may gain rows. Spectra, coordinates,
+    existing group rows, dataset types, and all original attributes are verified.
+    Partial files are retained on failure, without a successful sidecar.
+    """
+    import json
+    import shutil
+    from pathlib import Path
+    import h5py
+    from .configuration import file_identity
+    from .production import write_json_exclusive
+
+    source, mapping_file, output = map(Path, (source, mapping_file, output))
+    sidecar = output.with_suffix('.aliases.json')
+    if output.exists() or sidecar.exists():
+        raise FileExistsError(output)
+    if file_identity(source) != expected_source or file_identity(mapping_file) != expected_mapping:
+        raise ValueError('cache or mapping input identity differs')
+    mapping = json.loads(mapping_file.read_text())['baseline_mapping']
+    prefix = 'metadata/baseline_groups/'
+    with h5py.File(source, 'r') as handle:
+        groups = {int(k): v[:].tolist() for k, v in handle['metadata/baseline_groups'].items()}
+        spectrum = handle['erh_mode_power_spectrum']
+        if spectrum.ndim != 3 or any(i >= spectrum.shape[2] for i in groups):
+            raise ValueError('cache group index outside spectrum axis')
+        if int(handle['metadata/baseline_dimension'][()]) != 2:
+            raise ValueError('unsupported cache baseline axis')
+        aliases = resolve_cache_aliases(groups, mapping)
+    additions = {}
+    for entry in aliases:
+        additions.setdefault(prefix + str(entry['cache_index']), []).append(entry['cache_pair'])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with source.open('rb') as reader, output.open('xb') as writer:
+        shutil.copyfileobj(reader, writer, length=8 * 1024 * 1024)
+    with h5py.File(output, 'r+') as handle:
+        for name, rows in additions.items():
+            old = handle[name]
+            attrs, dtype = dict(old.attrs), old.dtype
+            values = np.concatenate([old[:], np.asarray(rows, dtype=dtype)])
+            del handle[name]
+            new = handle.create_dataset(name, data=values)
+            new.attrs.update(attrs)
+    checked = []
+    with h5py.File(source, 'r') as original, h5py.File(output, 'r') as copied:
+        def equal(a, b):
+            a, b = np.asarray(a), np.asarray(b)
+            return np.array_equal(a, b, equal_nan=True) if a.dtype.kind in 'fc' else np.array_equal(a, b)
+
+        def compare(name, obj):
+            actual = copied[name] if name else copied
+            if set(obj.attrs) != set(actual.attrs) or any(not equal(v, actual.attrs[k]) for k, v in obj.attrs.items()):
+                raise ValueError('cache copy changed attributes')
+            if isinstance(obj, h5py.Group):
+                if set(obj) != set(actual):
+                    raise ValueError('cache copy changed object inventory')
+                return
+            shape = (obj.shape[0] + len(additions[name]), 2) if name in additions else obj.shape
+            if actual.shape != shape or actual.dtype != obj.dtype:
+                raise ValueError('cache copy changed dataset structure')
+            for start in range(0, obj.shape[0], 8) if obj.shape else [None]:
+                key = () if start is None else slice(start, min(start + 8, obj.shape[0]))
+                if not equal(obj[key], actual[key]):
+                    raise ValueError('cache copy changed original values')
+            if name in additions and not equal(actual[obj.shape[0]:], additions[name]):
+                raise ValueError('cache alias rows differ')
+            checked.append(name)
+        compare('', original)
+        original.visititems(compare)
+        result_groups = {int(k): v[:].tolist() for k, v in copied['metadata/baseline_groups'].items()}
+        if resolve_cache_aliases(result_groups, mapping):
+            raise ValueError('cache alias coverage remains incomplete')
+    if file_identity(source) != expected_source or file_identity(mapping_file) != expected_mapping:
+        raise ValueError('cache or mapping changed during copying')
+    result = {'schema_version': 1, 'passed': True, 'source': expected_source,
+              'mapping': expected_mapping, 'output': file_identity(output), 'aliases': aliases,
+              'verified_original_datasets': checked, 'spectral_values_changed': False}
+    write_json_exclusive(sidecar, result)
+    return result
