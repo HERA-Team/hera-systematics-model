@@ -315,6 +315,14 @@ the projected peak fits 1.5 TB; it neither submits tasks nor changes their
 configuration. This empirical estimate is not a guaranteed upper bound, and
 subsequent submissions still require fresh storage admission.
 
+`localized_storage.remaining_slice_budgets(tasks, assessment)` converts a saved
+assessment with its `measurements` into deterministic unfinished-slice records.
+It reproduces the assessment, rejects inconsistent or over-cap projections,
+excludes measured slices, preserves configuration digests, and reconciles each
+family's reservations. The result binds the assessment digest. Verify the
+assessment run before calling; recheck live storage and aggregate resources
+before submitting any returned task. This function performs no submissions.
+
 `fringe_cache.copy_with_aliases(source, mapping_file, output, expected_source,
 expected_mapping)` creates an exclusive fringe-rate cache copy for additional
 physical baseline identities. The two expected identities contain absolute

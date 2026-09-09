@@ -2,6 +2,8 @@
 
 import re
 
+from .configuration import digest_json
+
 
 def project_localized_storage(tasks, measurements, retained_bytes, reserved_bytes=0):
     """Project unfinished slices from accepted, same-family smoke measurements.
@@ -70,3 +72,38 @@ def project_localized_storage(tasks, measurements, retained_bytes, reserved_byte
             "contingency_fraction": 0.2, "projected_peak_bytes": peak,
             "cap_bytes": 1500000000000, "within_cap": peak <= 1500000000000,
             "estimator": "maximum_measured_run_footprint_per_family"}
+
+
+def remaining_slice_budgets(tasks, assessment):
+    """Bind unfinished slice reservations to a consistent saved assessment.
+
+    The caller must verify the assessment's run and products before use, then
+    check fresh aggregate storage and scheduler resources before submission.
+    This function neither submits work nor reuses completed job identifiers.
+    """
+    measured = assessment["measurements"]
+    expected = project_localized_storage(
+        tasks, measured, assessment["retained_bytes"], assessment["reserved_bytes"])
+    if any(assessment.get(key) != value for key, value in expected.items()):
+        raise ValueError("assessment does not reproduce from its measured inputs")
+    if not expected["within_cap"]:
+        raise ValueError("assessment exceeds retained-storage cap")
+    completed = {item["slice"] for item in measured}
+    estimates = {(row["spw"], row["axis"], row["method"]):
+                 row["maximum_measured_run_bytes"] for row in expected["families"]}
+    remaining = []
+    for task in sorted(tasks, key=lambda item: item["slice"]):
+        if task["slice"] in completed:
+            continue
+        record = {key: task[key] for key in
+                  ("slice", "spw", "axis", "method", "features", "configuration_digest")}
+        record["projected_bytes"] = estimates[(task["spw"], task["axis"], task["method"])]
+        remaining.append(record)
+    additional = sum(row["projected_bytes"] for row in remaining)
+    if additional + expected["reserved_bytes"] != expected["projected_additional_bytes"]:
+        raise ValueError("remaining reservations do not reconcile with assessment")
+    return {"schema_version": 1, "assessment_digest": digest_json(assessment),
+            "completed_slices": sorted(completed), "tasks": remaining,
+            "task_count": len(remaining), "projected_additional_bytes": additional,
+            "external_reserved_bytes": expected["reserved_bytes"],
+            "requires_fresh_storage_and_resource_admission": True}

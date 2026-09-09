@@ -2,7 +2,10 @@ import copy
 
 import pytest
 
-from hera_systematics_model.localized_storage import project_localized_storage
+from hera_systematics_model.localized_storage import (
+    project_localized_storage,
+    remaining_slice_budgets,
+)
 
 
 def inputs():
@@ -65,3 +68,47 @@ def test_cap_and_impossible_retained_footprints():
     for invalid in (-1, True, 1.5):
         with pytest.raises(ValueError):
             project_localized_storage(tasks, measurements, 1000, invalid)
+
+
+def assessment(tasks, measurements, retained=1000):
+    return {**project_localized_storage(tasks, measurements, retained, 100),
+            "measurements": measurements}
+
+
+def test_remaining_dispatch_excludes_measured_products_and_reconciles_reservations():
+    tasks, measurements = inputs()
+    saved = assessment(tasks, measurements)
+    result = remaining_slice_budgets(tasks, saved)
+    assert result == remaining_slice_budgets(tasks[::-1], saved)
+    assert result["task_count"] == 4
+    assert set(result["completed_slices"]).isdisjoint(row["slice"] for row in result["tasks"])
+    assert result["projected_additional_bytes"] == 600
+    assert result["external_reserved_bytes"] == 100
+    assert {row["configuration_digest"] for row in result["tasks"]} == {"1" * 64, "2" * 64}
+    assert result["requires_fresh_storage_and_resource_admission"]
+
+
+@pytest.mark.parametrize("field", ["projected_peak_bytes", "projected_additional_bytes",
+                                  "cap_bytes", "families", "measurements"])
+def test_changed_assessment_cannot_authorize_dispatch(field):
+    tasks, measurements = inputs()
+    saved = assessment(tasks, measurements)
+    if field == "families":
+        saved[field][0]["maximum_measured_run_bytes"] += 1
+    elif field == "measurements":
+        saved[field][0]["configuration_digest"] = "f" * 64
+    else:
+        saved[field] += 1
+    with pytest.raises(ValueError):
+        remaining_slice_budgets(tasks, saved)
+
+
+def test_failed_admission_and_complete_inventory():
+    tasks, measurements = inputs()
+    with pytest.raises(ValueError, match="cap"):
+        remaining_slice_budgets(tasks, assessment(tasks, measurements, 1500000000000))
+    all_measured = [{"slice": task["slice"],
+                     "configuration_digest": task["configuration_digest"],
+                     "retained_bytes": 100} for task in tasks]
+    result = remaining_slice_budgets(tasks, assessment(tasks, all_measured))
+    assert result["tasks"] == [] and result["projected_additional_bytes"] == 0
