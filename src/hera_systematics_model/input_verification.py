@@ -12,6 +12,13 @@ def file_stamp(path):
     return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
 
 
+_STAMP_FIELDS = ("device", "inode", "bytes", "mtime_ns", "ctime_ns")
+
+
+def _changed_fields(before, after):
+    return [name for name, left, right in zip(_STAMP_FIELDS, before, after) if left != right]
+
+
 class VerifiedInputs:
     """Hash before first consumption and again before successful batch completion.
 
@@ -41,6 +48,7 @@ class VerifiedInputs:
         self._entries = {}
         self._active = False
         self._used = False
+        self._final_mismatch = None
 
     def __enter__(self):
         if self._used:
@@ -76,8 +84,19 @@ class VerifiedInputs:
         try:
             if exception_type is None:
                 for index, (path, (stamp, identity)) in enumerate(sorted(self._entries.items())):
-                    if file_stamp(path) != stamp or file_identity(path) != identity or file_stamp(path) != stamp:
-                        raise ValueError("input changed before final batch acceptance")
+                    before_hash = file_stamp(path)
+                    measured = file_identity(path)
+                    after_hash = file_stamp(path)
+                    stamp_fields = sorted(set(_changed_fields(stamp, before_hash)
+                                              + _changed_fields(stamp, after_hash)))
+                    identity_fields = sorted(key for key in identity if measured.get(key) != identity[key])
+                    if stamp_fields or identity_fields:
+                        self._final_mismatch = {"path": str(path),
+                            "stamp_fields": stamp_fields, "identity_fields": identity_fields,
+                            "expected": identity, "measured": measured}
+                        fields = ",".join(stamp_fields + identity_fields)
+                        raise ValueError(
+                            f"input changed before final batch acceptance: {path} ({fields})")
                     if self.progress is not None:
                         self.progress("final", index + 1, identity)
                 if not self._entries:
@@ -93,7 +112,8 @@ class VerifiedInputs:
                 "expected_inventory_digest": None if self._expected is None else digest_json(
                     [self._expected[path] for path in sorted(self._expected)]),
                 "inputs": [dict(value[1]) for _, value in sorted(self._entries.items())],
-                "intermediate_identity_fields": ["device", "inode", "bytes", "mtime_ns", "ctime_ns"]})
+                "intermediate_identity_fields": list(_STAMP_FIELDS),
+                "final_mismatch": self._final_mismatch})
         return False
 
 

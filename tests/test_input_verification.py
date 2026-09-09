@@ -57,13 +57,41 @@ def test_final_hash_and_child_failures_cannot_produce_acceptance(tmp_path, monke
         with VerifiedInputs(report) as inputs:
             first = inputs.identity(source)
             monkeypatch.setattr(module, "file_identity", lambda path: {**first, "sha256": "different"})
-    assert not json.loads(report.read_text())["passed"]
+    failure = json.loads(report.read_text())
+    assert not failure["passed"]
+    assert failure["final_mismatch"] == {"path": str(source.resolve()),
+        "stamp_fields": [], "identity_fields": ["sha256"],
+        "expected": first, "measured": {**first, "sha256": "different"}}
     report = tmp_path / "child-failure.json"
     with pytest.raises(RuntimeError, match="child failed"):
         with VerifiedInputs(report) as inputs:
             inputs.identity(source)
             raise RuntimeError("child failed")
     assert json.loads(report.read_text())["failure"] == "child failed"
+
+
+def test_final_metadata_mismatch_identifies_input_and_fields(tmp_path, monkeypatch):
+    import hera_systematics_model.input_verification as module
+
+    source, report = tmp_path / "source", tmp_path / "verification.json"
+    source.write_text("input")
+    actual = module.file_stamp
+    calls = 0
+
+    def changed_stamp(path):
+        nonlocal calls
+        calls += 1
+        stamp = actual(path)
+        return stamp if calls <= 2 else (*stamp[:-1], stamp[-1] + 1)
+
+    monkeypatch.setattr(module, "file_stamp", changed_stamp)
+    with pytest.raises(ValueError, match=r"source \(ctime_ns\)"):
+        with VerifiedInputs(report) as inputs:
+            inputs.identity(source)
+    failure = json.loads(report.read_text())
+    assert failure["final_mismatch"]["path"] == str(source.resolve())
+    assert failure["final_mismatch"]["stamp_fields"] == ["ctime_ns"]
+    assert failure["final_mismatch"]["identity_fields"] == []
 
 
 def test_accepted_inventory_is_checked_before_first_consumption(tmp_path):
