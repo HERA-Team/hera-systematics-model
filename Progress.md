@@ -44,3 +44,12 @@
 - Verified four concurrent corrupted-baseline runs for 0–1, 0–2, 0–3 and 0–4 across all 14 spectral windows. Job 11829640 completed in 16:54 with exit status 0:0; its merged product contains 584 physical sample rows, with 146 native windows per baseline. Independent acceptance job 11829672 completed with exit status 0:0 and verified the products and resource measurements.
 - Verified canonical single-row labels in fully time-averaged companions. All eight raw and time-averaged numerical payload comparisons were bitwise identical to their recorded comparison products. Original and resulting labels are retained in per-baseline metadata reports. The four-baseline task retained 554,608,982 bytes, including notebooks, spectra, merge and verification products.
 - Verified spectrum-record extraction and serialization for baseline 6–34 across all 14 source SPWs. Job 11830546 completed with exit status 0:0. Independent checks matched saved power and noise bitwise to each original HDF5 window and matched physical frequencies, external SPW identifiers and all 146 time windows exactly, including reader-local SPW renumbering.
+
+# 9th September 2026
+
+## Completed
+
+- Accepted the complete ideal visibility library after independent verification of 884 physical baselines, 4,088 native time rows, finite-sample validity, flags, unit counts, physical coordinates and payload hashes. Producer job 11871664 and acceptance job 11871888 completed with exit status 0:0.
+- Added geometry-bound fringe-rate cache aliases for 26 ideal baselines absent from the original cache. The maximum mapped ENU-vector difference is 1.0669556142951236e-9 metres against a 1e-6-metre tolerance. Full-span baseline 0–326 smoke job 11942776 verified all 14 spectral windows and 146 averaging windows.
+- Added exact spectral-batch input forensics and reuse acceptance without overwriting retained products. Ideal reuse job 11974627 and corrupted reuse job 11975159 completed with exit status 0:0 after double-hash verification of their registered inputs.
+- Added a versioned command that applies the declared per-window scientific conclusion rule to saved four-fold evidence. It requires common-plane selected, zero and mean scores in all four physical-time folds and a positive mean improvement over the better baseline exceeding one fold standard error.
