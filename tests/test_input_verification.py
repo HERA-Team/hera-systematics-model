@@ -70,7 +70,7 @@ def test_final_hash_and_child_failures_cannot_produce_acceptance(tmp_path, monke
     assert json.loads(report.read_text())["failure"] == "child failed"
 
 
-def test_final_metadata_mismatch_identifies_input_and_fields(tmp_path, monkeypatch):
+def test_final_metadata_drift_is_recorded_when_content_matches(tmp_path, monkeypatch):
     import hera_systematics_model.input_verification as module
 
     source, report = tmp_path / "source", tmp_path / "verification.json"
@@ -85,13 +85,14 @@ def test_final_metadata_mismatch_identifies_input_and_fields(tmp_path, monkeypat
         return stamp if calls <= 2 else (*stamp[:-1], stamp[-1] + 1)
 
     monkeypatch.setattr(module, "file_stamp", changed_stamp)
-    with pytest.raises(ValueError, match=r"source \(ctime_ns\)"):
-        with VerifiedInputs(report) as inputs:
-            inputs.identity(source)
-    failure = json.loads(report.read_text())
-    assert failure["final_mismatch"]["path"] == str(source.resolve())
-    assert failure["final_mismatch"]["stamp_fields"] == ["ctime_ns"]
-    assert failure["final_mismatch"]["identity_fields"] == []
+    with VerifiedInputs(report) as inputs:
+        inputs.identity(source)
+    result = json.loads(report.read_text())
+    assert result["passed"]
+    assert result["final_mismatch"] is None
+    assert result["final_metadata_drifts"] == [{
+        "path": str(source.resolve()), "fields": ["ctime_ns"],
+        "content_identity_unchanged": True}]
 
 
 def test_accepted_inventory_is_checked_before_first_consumption(tmp_path):

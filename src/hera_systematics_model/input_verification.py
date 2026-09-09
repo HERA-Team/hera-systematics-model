@@ -23,8 +23,9 @@ class VerifiedInputs:
     """Hash before first consumption and again before successful batch completion.
 
     Intermediate lookups check device, inode, size and both modification/change
-    timestamps. Cached identities cannot be reused outside this one context.
-    The final report is written only after every input passes a fresh hash.
+    timestamps. The final decision uses a fresh byte count and SHA-256 identity;
+    metadata-only drift is retained in the report. Cached identities cannot be
+    reused outside this one context.
     """
 
     def __init__(self, report_path, progress=None, expected_identities=None):
@@ -49,6 +50,7 @@ class VerifiedInputs:
         self._active = False
         self._used = False
         self._final_mismatch = None
+        self._final_metadata_drifts = []
 
     def __enter__(self):
         if self._used:
@@ -90,13 +92,17 @@ class VerifiedInputs:
                     stamp_fields = sorted(set(_changed_fields(stamp, before_hash)
                                               + _changed_fields(stamp, after_hash)))
                     identity_fields = sorted(key for key in identity if measured.get(key) != identity[key])
-                    if stamp_fields or identity_fields:
+                    if identity_fields:
                         self._final_mismatch = {"path": str(path),
                             "stamp_fields": stamp_fields, "identity_fields": identity_fields,
                             "expected": identity, "measured": measured}
                         fields = ",".join(stamp_fields + identity_fields)
                         raise ValueError(
                             f"input changed before final batch acceptance: {path} ({fields})")
+                    if stamp_fields:
+                        self._final_metadata_drifts.append({
+                            "path": str(path), "fields": stamp_fields,
+                            "content_identity_unchanged": True})
                     if self.progress is not None:
                         self.progress("final", index + 1, identity)
                 if not self._entries:
@@ -113,7 +119,8 @@ class VerifiedInputs:
                     [self._expected[path] for path in sorted(self._expected)]),
                 "inputs": [dict(value[1]) for _, value in sorted(self._entries.items())],
                 "intermediate_identity_fields": list(_STAMP_FIELDS),
-                "final_mismatch": self._final_mismatch})
+                "final_mismatch": self._final_mismatch,
+                "final_metadata_drifts": self._final_metadata_drifts})
         return False
 
 
