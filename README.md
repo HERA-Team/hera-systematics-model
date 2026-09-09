@@ -300,6 +300,21 @@ parent acceptances and file identities; it does not submit jobs or reserve
 resources. The execution worker must revalidate its parent and sample identities.
 Use a compute node when product verification requires substantial I/O.
 
+`localized_storage.project_localized_storage(tasks, measurements, retained_bytes,
+reserved_bytes=0)` estimates additional storage from verified smoke measurements.
+Tasks provide `slice`, `spw`, `axis`, `method`, `features`, and
+`configuration_digest`; measurements provide `slice`, `configuration_digest`,
+and positive `retained_bytes` for the entire measured run. Callers must first
+verify source inventories, scheduler acceptance, and measurement provenance.
+Every SPW/axis/method family must have a measured member and uniform feature
+dimensions. Each unfinished member receives the largest observed footprint in
+its family. Already measured runs are counted in retained storage, not again
+in the additional estimate. The function adds existing reservations and applies
+20 percent contingency once, rounding upward to whole bytes. It reports whether
+the projected peak fits 1.5 TB; it neither submits tasks nor changes their
+configuration. This empirical estimate is not a guaranteed upper bound, and
+subsequent submissions still require fresh storage admission.
+
 `fringe_cache.copy_with_aliases(source, mapping_file, output, expected_source,
 expected_mapping)` creates an exclusive fringe-rate cache copy for additional
 physical baseline identities. The two expected identities contain absolute
