@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 import pytest
 
-from hera_systematics_model.spectrum_layout import inspect_spectrum, require_compatible
+from hera_systematics_model.spectrum_layout import inspect_spectrum, require_compatible, require_merge_compatible
 
 
 def make_spectrum(path, baseline=106134, start=10., rows=3):
@@ -59,6 +59,25 @@ def test_layout_allows_different_baselines_and_times_but_requires_exact_conventi
             with pytest.raises(ValueError, match="metadata mismatch"):
                 require_compatible(x, y)
             y.attrs[attribute] = original
+
+
+def test_merge_compatibility_is_limited_to_two_step_positive_float64_scalars(tmp_path):
+    a, b = make_spectrum(tmp_path / "a.h5"), make_spectrum(tmp_path / "b.h5", baseline=100191)
+    with h5py.File(a) as left, h5py.File(b, "r+") as right:
+        x, y = left["stokespol/interleave_averaged"], right["stokespol/interleave_averaged"]
+        scalars = y.attrs["scalar_array"]
+        scalars[4, 1] = np.nextafter(scalars[4, 1], np.inf)
+        y.attrs["scalar_array"] = scalars
+        with pytest.raises(ValueError, match="scalar_array"):
+            require_compatible(x, y)
+        require_merge_compatible(x, y)
+        scalars[4, 1] = np.nextafter(scalars[4, 1], np.inf)
+        y.attrs["scalar_array"] = scalars
+        require_merge_compatible(x, y)
+        scalars[4, 1] = np.nextafter(scalars[4, 1], np.inf)
+        y.attrs["scalar_array"] = scalars
+        with pytest.raises(ValueError, match="scalar_array"):
+            require_merge_compatible(x, y)
 
 
 @pytest.mark.parametrize("mutation,reason", [

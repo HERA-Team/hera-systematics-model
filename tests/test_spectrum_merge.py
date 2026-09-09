@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from hera_systematics_model.artifacts import read_artifact
-from hera_systematics_model.spectrum_merge import merge_spectra
+from hera_systematics_model.spectrum_merge import merge_spectra, verify_merge_receipt
 from test_spectrum_layout import make_spectrum
 
 
@@ -53,6 +53,41 @@ def test_merge_rejects_duplicate_baselines_and_changed_conventions(tmp_path):
         handle["stokespol/interleave_averaged"].attrs["norm_units"] = "different"
     with pytest.raises(ValueError, match="metadata mismatch"):
         merge_spectra(paths, tmp_path / "units.h5", [106134106134])
+
+
+def test_merge_preserves_bounded_scalar_provenance_without_transforming_payload(tmp_path):
+    paths = [make_spectrum(tmp_path / "a.h5", baseline=100191), make_spectrum(tmp_path / "b.h5")]
+    with h5py.File(paths[1], "r+") as handle:
+        group = handle["stokespol/interleave_averaged"]
+        scalars = group.attrs["scalar_array"]
+        scalars[4, 1] = np.nextafter(scalars[4, 1], np.inf)
+        scalars[4, 1] = np.nextafter(scalars[4, 1], np.inf)
+        group.attrs["scalar_array"] = scalars
+    result = tmp_path / "merged.h5"
+    metadata = merge_spectra(paths, result, [100191100191, 106134106134])
+    arrays, saved = verify_merge_receipt(result.with_suffix(".merge.npz"))
+    assert saved == metadata
+    assert saved["normalization"]["payload_transform"] == "none"
+    np.testing.assert_equal(arrays["input_scalar_arrays"][0], np.ones((14, 2)))
+    expected = np.nextafter(np.nextafter(1., np.inf), np.inf)
+    np.testing.assert_equal(arrays["input_scalar_arrays"][1, 4, 1], expected)
+    with h5py.File(paths[1]) as source, h5py.File(result) as output:
+        np.testing.assert_equal(
+            output["stokespol/interleave_averaged/data_spw4"][3:],
+            source["stokespol/interleave_averaged/data_spw4"][()],
+        )
+
+
+def test_merge_rejects_three_step_scalar_difference(tmp_path):
+    paths = [make_spectrum(tmp_path / "a.h5", baseline=100191), make_spectrum(tmp_path / "b.h5")]
+    with h5py.File(paths[1], "r+") as handle:
+        group = handle["stokespol/interleave_averaged"]
+        scalars = group.attrs["scalar_array"]
+        for _ in range(3):
+            scalars[4, 1] = np.nextafter(scalars[4, 1], np.inf)
+        group.attrs["scalar_array"] = scalars
+    with pytest.raises(ValueError, match="scalar_array"):
+        merge_spectra(paths, tmp_path / "merged.h5", [100191100191, 106134106134])
 
 
 def test_reopened_verification_rejects_corrupted_copy(tmp_path, monkeypatch):

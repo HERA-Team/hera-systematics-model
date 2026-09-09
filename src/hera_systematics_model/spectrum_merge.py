@@ -8,7 +8,7 @@ from .artifacts import read_artifact, write_artifact
 from .configuration import file_identity
 from .input_verification import VerifiedInputs
 from .parity import exact_equal
-from .spectrum_layout import inspect_spectrum, require_compatible, require_equal
+from .spectrum_layout import derived_scalars_equivalent, inspect_spectrum, require_equal, require_merge_compatible
 
 
 def verify_merge_receipt(path):
@@ -28,9 +28,23 @@ def verify_merge_receipt(path):
     if report.get("passed") is not True or report.get("inputs") != expected:
         raise ValueError("merge input verification is incomplete")
     with h5py.File(metadata["output"]["path"], "r") as handle:
-        layout = inspect_spectrum(handle[metadata["group"]])
+        group = handle[metadata["group"]]
+        layout = inspect_spectrum(group)
         if any(layout["counts"][key] != value for key, value in metadata["counts"].items()):
             raise ValueError("merge receipt dimensions disagree with the spectrum")
+        normalization = metadata.get("normalization")
+        scalars = arrays.get("input_scalar_arrays")
+        expected_shape = (len(metadata["inputs"]), layout["counts"]["Nspws"], layout["counts"]["Npols"])
+        if (normalization != {
+                "input_scalar_arrays": "input_scalar_arrays",
+                "maximum_float64_steps": 2,
+                "output_scalar_source_input_index": 0,
+                "payload_transform": "none",
+                }
+                or scalars is None or scalars.shape != expected_shape
+                or not np.array_equal(group.attrs["scalar_array"], scalars[0])
+                or not all(derived_scalars_equivalent(scalars[0], value) for value in scalars)):
+            raise ValueError("merge normalization provenance is incomplete")
     return arrays, metadata
 
 
@@ -64,7 +78,7 @@ def inspect_inputs(paths, group_name, expected_pairs, input_set):
             with h5py.File(path, "r") as handle:
                 group = handle[group_name]
                 layout = inspect_spectrum(group)
-                require_compatible(first, group)
+                require_merge_compatible(first, group)
                 require_attributes(reference.attrs, handle.attrs, "root")
                 require_attributes(first.parent.attrs, group.parent.attrs, "group")
                 for name in group:
@@ -84,10 +98,15 @@ def inspect_inputs(paths, group_name, expected_pairs, input_set):
                 pairs.add(pair)
                 entries.append({"path": path, "identity": identity, "pair": pair,
                                 "layout": layout, "header": dict(handle["header"].attrs),
-                                "history": group.attrs["history"]})
+                                "history": group.attrs["history"],
+                                "scalar_array": np.asarray(group.attrs["scalar_array"]).copy()})
     if pairs != set(expected_pairs) or len(expected_pairs) != len(pairs):
         raise ValueError("measured baseline inventory differs from expected merge inputs")
-    return sorted(entries, key=lambda item: item["pair"])
+    entries = sorted(entries, key=lambda item: item["pair"])
+    if not all(derived_scalars_equivalent(entries[0]["scalar_array"], entry["scalar_array"])
+               for entry in entries):
+        raise ValueError("spectral metadata mismatch: scalar_array")
+    return entries
 
 
 def merged_counts(entries):
@@ -197,12 +216,15 @@ def merge_spectra(paths, output_path, expected_pairs, group_name="stokespol/inte
                 key = f"input_{index:05d}_attribute_{number:03d}"
                 arrays[key] = np.asarray(value)
                 attributes.append({"input_index": index, "attribute": name, "array": key})
+        arrays["input_scalar_arrays"] = np.stack([entry["scalar_array"] for entry in entries])
         if any(array.dtype.hasobject for array in arrays.values()):
             raise ValueError("source attributes require unsupported object serialization")
     metadata = {"passed": True, "group": group_name, "counts": counts, "output": file_identity(output_path),
         "inputs": [{**entry["identity"], "baseline_pair_code": entry["pair"],
                     "row_count": entry["layout"]["counts"]["Nbltpairs"]} for entry in entries],
         "source_attributes": attributes, "input_verification": file_identity(input_report),
+        "normalization": {"input_scalar_arrays": "input_scalar_arrays", "maximum_float64_steps": 2,
+                          "output_scalar_source_input_index": 0, "payload_transform": "none"},
         "copy_block_bytes": block_bytes, "payload_verification": "exact reopened source-to-output comparison"}
     write_artifact(sidecar, "spectral-merge", arrays, metadata)
     return metadata

@@ -38,6 +38,20 @@ def require_equal(left, right, label):
         raise ValueError(f"spectral metadata mismatch: {label}")
 
 
+def derived_scalars_equivalent(left, right):
+    """Return whether positive float64 scalars differ by at most two steps."""
+    left, right = np.asarray(left), np.asarray(right)
+    if (left.shape != right.shape or left.dtype != np.dtype(np.float64)
+            or right.dtype != np.dtype(np.float64)
+            or not np.isfinite(left).all() or not np.isfinite(right).all()
+            or np.any(left <= 0) or np.any(right <= 0)):
+        return False
+    lower, upper = np.minimum(left, right), np.maximum(left, right)
+    first_step = np.nextafter(lower, upper)
+    second_step = np.nextafter(first_step, upper)
+    return bool(np.equal(second_step, upper).all())
+
+
 def inspect_spectrum(group, expected_spws=tuple(range(14))):
     """Reject absent bands, inconsistent axes, and duplicate physical samples.
 
@@ -111,14 +125,27 @@ def inspect_spectrum(group, expected_spws=tuple(range(14))):
             "physical_samples": physical, "counts": counts}
 
 
-def require_compatible(reference, candidate):
-    """Require the same numerical convention and ordered spectral coordinates."""
+def _require_compatible(reference, candidate, allow_scalar_roundoff):
     if set(reference.attrs) != set(candidate.attrs) or set(reference) != set(candidate):
         raise ValueError("spectral schema differs across inputs")
     for name in set(reference.attrs) - VARIABLE_ATTRIBUTES:
-        require_equal(reference.attrs[name], candidate.attrs[name], name)
+        if name == "scalar_array" and allow_scalar_roundoff:
+            if not derived_scalars_equivalent(reference.attrs[name], candidate.attrs[name]):
+                raise ValueError("spectral metadata mismatch: scalar_array")
+        else:
+            require_equal(reference.attrs[name], candidate.attrs[name], name)
     for name in CONSTANT_DATASETS:
         require_equal(reference[name][()], candidate[name][()], name)
     for name in reference:
         if reference[name].dtype != candidate[name].dtype:
             raise ValueError(f"spectral dataset type differs: {name}")
+
+
+def require_compatible(reference, candidate):
+    """Require exact numerical conventions and ordered spectral coordinates."""
+    _require_compatible(reference, candidate, allow_scalar_roundoff=False)
+
+
+def require_merge_compatible(reference, candidate):
+    """Allow only two-step roundoff in the derived scalar metadata."""
+    _require_compatible(reference, candidate, allow_scalar_roundoff=True)
