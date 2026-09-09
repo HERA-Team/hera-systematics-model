@@ -58,8 +58,8 @@ def run_stability(args):
 
 
 def run_plot(args):
-    from .plotting import plot_diagnostics
     from .cross_plotting import plot_cross_spw
+    from .plotting import plot_diagnostics
     from .stability_plotting import plot_stability
 
     arrays, metadata = read_artifact(args.artifact, "diagnostics")
@@ -98,6 +98,19 @@ def run_summary(args):
     return 0 if complete else 2
 
 
+def run_conclusion(args):
+    from .conclusions import predictive_conclusion
+    from .production import write_json_exclusive
+
+    summary = json.loads(Path(args.summary).read_text())
+    result = predictive_conclusion(summary)
+    result["input"] = file_identity(args.summary)
+    write_json_exclusive(Path(args.output), result)
+    print(json.dumps({"output": str(Path(args.output).resolve()),
+                      "conclusion": result["conclusion"]}))
+    return 0
+
+
 def run_localized_inventory(args):
     from .localized import localized_inventory
     from .production import write_json_exclusive
@@ -109,6 +122,11 @@ def run_localized_inventory(args):
 
 
 def add_commands(commands):
+    conclusion = commands.add_parser(
+        "conclude", help="Apply the predeclared four-fold pilot conclusion rule")
+    for name in ("summary", "output"):
+        conclusion.add_argument("--" + name, required=True)
+    conclusion.set_defaults(function=run_conclusion)
     localized = commands.add_parser("inventory-localized", help="Inventory both physical slice directions and methods")
     for name in ("samples", "fit", "output"):
         localized.add_argument("--" + name, required=True)

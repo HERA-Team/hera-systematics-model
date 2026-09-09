@@ -163,6 +163,7 @@ hera-systematics stability --samples paired.npz --fit fit.npz --block-length 12 
 hera-systematics plot stability.npz --output-dir stability-figures
 hera-systematics replay --samples paired.npz --evaluation evaluation.npz --output replay.json
 hera-systematics summary --fit fit.npz --evaluation evaluation.npz --output summary.json
+hera-systematics conclude --summary summary.json --output conclusion.json
 hera-systematics verify evaluation.npz
 ```
 
@@ -170,7 +171,7 @@ Bootstrap stability reads the saved fit configuration, including a fixed cylindr
 
 Per-group and per-delay diagnostic views retain the selected physical coordinates and contributor identities. Their plots use coordinate profiles for a single group or delay; these are cylindrical slices without spherical averaging. Fit and evaluation configurations must agree except for the validation guard, and the source file identities must match both artifacts.
 
-`hera-systematics summary --fit fit.npz --evaluation evaluation.npz --output summary.json` exports per-fold choices, coverage, equal-fold predictive losses and zero/mean comparisons. Standard errors use physical-time fold scores, not feature partitions. Incomplete fold sets have unavailable aggregate losses; a zero baseline has an unavailable loss ratio. Descriptive training loss is labeled separately. The export contains numerical evidence and does not assign a scientific conclusion.
+`hera-systematics summary --fit fit.npz --evaluation evaluation.npz --output summary.json` exports per-fold choices, coverage, equal-fold predictive losses and zero/mean comparisons. Standard errors use physical-time fold scores, not feature partitions. Incomplete fold sets have unavailable aggregate losses; a zero baseline has an unavailable loss ratio. Descriptive training loss is labeled separately. `hera-systematics conclude --summary summary.json --output conclusion.json` applies the fixed pilot rule: all four outer folds need common-plane selected, zero and mean scores; the mean foldwise improvement over the lower-loss baseline must be positive and exceed one physical-time-fold standard error. Incomplete evidence is reported separately from a complete result without demonstrated advantage. Rank boundaries, coverage and sensitivities remain limitations rather than inputs that silently change this rule.
 
 `hera-systematics plot stability.npz --output-dir stability-figures` renders matched sign agreement, ordered subspace angles, near-degenerate cluster angles and modeled support. Percentiles use evaluated draws; support fractions retain the total requested replicate count, including failed draws. The figure manifest contains numerical summaries and failure records.
 
