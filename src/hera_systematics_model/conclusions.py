@@ -102,3 +102,54 @@ def predictive_conclusion(summary):
         },
         "limitations": summary.get("limitations", []),
     }
+
+
+def predictive_conclusion_table(summaries):
+    """Build the primary 14-SPW table without pooling spectral windows."""
+    if not isinstance(summaries, list) or len(summaries) != 14:
+        raise ValueError("exactly 14 spectral-window summaries are required")
+    indexed = {}
+    for summary in summaries:
+        identity = summary.get("identity", {})
+        spw = identity.get("spw")
+        if type(spw) is not int or spw in indexed:
+            raise ValueError("unique integer spectral-window identities are required")
+        indexed[spw] = summary
+    if sorted(indexed) != list(range(14)):
+        raise ValueError("spectral-window identities must cover zero through thirteen")
+
+    rows = []
+    for spw in range(14):
+        summary = indexed[spw]
+        conclusion = predictive_conclusion(summary)
+        descriptive = summary.get("descriptive_fit", {})
+        coverage = summary.get("coverage", {})
+        losses = summary.get("predictive_loss", {})
+        rows.append({
+            "spw": spw,
+            "identity": summary["identity"],
+            "selected": descriptive.get("selected"),
+            "descriptive_fit_complete": descriptive.get("complete"),
+            "rank_ceiling_selected": descriptive.get("rank_ceiling_selected"),
+            "coverage": {
+                name: coverage.get(name)
+                for name in ("eligible_cells", "target", "modeled", "mean_only", "unavailable")
+            },
+            "predictive_loss": {
+                name: losses.get(name) for name in ("selected", "zero", "mean")
+            },
+            "better_baseline": conclusion["better_baseline"],
+            "better_baseline_minus_selected": conclusion[
+                "better_baseline_minus_selected"],
+            "conclusion": conclusion["conclusion"],
+            "conclusion_key": conclusion["conclusion_key"],
+            "criteria": conclusion["criteria"],
+            "limitations": conclusion["limitations"],
+        })
+    return {
+        "schema_version": 1,
+        "spectral_windows": list(range(14)),
+        "rows": rows,
+        "aggregation_across_spectral_windows": False,
+        "performance_estimator": "four outer physical-time folds per spectral window",
+    }

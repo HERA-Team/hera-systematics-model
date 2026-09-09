@@ -4,7 +4,10 @@ import pytest
 
 from hera_systematics_model.artifacts import canonical_json
 from hera_systematics_model.cli import main
-from hera_systematics_model.conclusions import predictive_conclusion
+from hera_systematics_model.conclusions import (
+    predictive_conclusion,
+    predictive_conclusion_table,
+)
 
 
 def summary(selected=(5, 5, 5, 5), zero=(10, 10, 10, 10), mean=(9, 9, 9, 9)):
@@ -28,6 +31,16 @@ def summary(selected=(5, 5, 5, 5), zero=(10, 10, 10, 10), mean=(9, 9, 9, 9)):
         "schema_version": 1,
         "identity": {"spw": 6, "power_units": "mK2 Mpc3 / h3"},
         "folds": folds,
+        "descriptive_fit": {
+            "complete": True,
+            "selected": {"representation": "linear", "method": "complete", "rank": 2},
+            "rank_ceiling_selected": False,
+        },
+        "coverage": {"eligible_cells": 100, "target": {"cells": 100},
+                     "modeled": {"cells": 80}, "mean_only": {"cells": 20},
+                     "unavailable": {"cells": 0}},
+        "predictive_loss": {"selected": {"mean": 5}, "zero": {"mean": 10},
+                            "mean": {"mean": 9}},
         "limitations": ["one correlated LST arc"],
     }
 
@@ -97,3 +110,49 @@ def test_conclusion_command_binds_saved_summary(tmp_path):
     assert report["conclusion_key"] == "useful"
     assert report["input"]["path"] == str(source)
     assert report["input"]["bytes"] == source.stat().st_size
+
+
+def test_conclusion_table_preserves_each_spectral_window():
+    summaries = []
+    for spw in reversed(range(14)):
+        evidence = summary()
+        evidence["identity"] = {**evidence["identity"], "spw": spw}
+        evidence["descriptive_fit"]["selected"]["rank"] = spw % 3
+        summaries.append(evidence)
+    report = predictive_conclusion_table(summaries)
+    assert report["spectral_windows"] == list(range(14))
+    assert [row["spw"] for row in report["rows"]] == list(range(14))
+    assert [row["selected"]["rank"] for row in report["rows"]] == [i % 3 for i in range(14)]
+    assert not report["aggregation_across_spectral_windows"]
+    canonical_json(report)
+
+
+def test_conclusion_table_rejects_duplicate_or_incomplete_windows():
+    summaries = []
+    for spw in range(14):
+        evidence = summary()
+        evidence["identity"] = {**evidence["identity"], "spw": spw}
+        summaries.append(evidence)
+    summaries[-1]["identity"]["spw"] = 12
+    with pytest.raises(ValueError, match="unique"):
+        predictive_conclusion_table(summaries)
+    with pytest.raises(ValueError, match="exactly 14"):
+        predictive_conclusion_table(summaries[:-1])
+
+
+def test_conclusion_table_command_binds_all_summary_files(tmp_path):
+    paths = []
+    for spw in range(14):
+        evidence = summary()
+        evidence["identity"] = {**evidence["identity"], "spw": spw}
+        path = tmp_path / f"spw-{spw:02d}.json"
+        path.write_text(json.dumps(evidence))
+        paths.append(path)
+    output = tmp_path / "primary-table.json"
+    arguments = ["conclude-table", "--summaries", *map(str, paths),
+                 "--output", str(output)]
+    assert main(arguments) == 0
+    report = json.loads(output.read_text())
+    assert len(report["inputs"]) == 14
+    assert [row["spw"] for row in report["rows"]] == list(range(14))
+    assert [item["path"] for item in report["inputs"]] == list(map(str, paths))

@@ -111,6 +111,19 @@ def run_conclusion(args):
     return 0
 
 
+def run_conclusion_table(args):
+    from .conclusions import predictive_conclusion_table
+    from .production import write_json_exclusive
+
+    summaries = [json.loads(Path(path).read_text()) for path in args.summaries]
+    result = predictive_conclusion_table(summaries)
+    result["inputs"] = [file_identity(path) for path in args.summaries]
+    write_json_exclusive(Path(args.output), result)
+    print(json.dumps({"output": str(Path(args.output).resolve()),
+                      "spectral_windows": result["spectral_windows"]}))
+    return 0
+
+
 def run_localized_inventory(args):
     from .localized import localized_inventory
     from .production import write_json_exclusive
@@ -122,6 +135,11 @@ def run_localized_inventory(args):
 
 
 def add_commands(commands):
+    conclusion_table = commands.add_parser(
+        "conclude-table", help="Build the validated 14-window primary result table")
+    conclusion_table.add_argument("--summaries", nargs="+", required=True)
+    conclusion_table.add_argument("--output", required=True)
+    conclusion_table.set_defaults(function=run_conclusion_table)
     conclusion = commands.add_parser(
         "conclude", help="Apply the predeclared four-fold pilot conclusion rule")
     for name in ("summary", "output"):
