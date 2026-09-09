@@ -23,8 +23,8 @@ def predictive_conclusion(summary):
     if [fold.get("outer_fold") for fold in folds] != list(range(4)):
         raise ValueError("outer physical-time fold identities must be ordered")
 
-    improvements = []
-    baseline_choices = []
+    selected_losses = []
+    baseline_losses = {"zero": [], "mean": []}
     complete_folds = []
     unavailable = []
     for fold in folds:
@@ -45,20 +45,29 @@ def predictive_conclusion(summary):
                     and math.isfinite(value) for value in values.values())
         )
         if not complete:
-            improvements.append(np.nan)
-            baseline_choices.append(None)
+            selected_losses.append(np.nan)
+            for values_list in baseline_losses.values():
+                values_list.append(np.nan)
             unavailable.append({
                 "outer_fold": fold["outer_fold"],
                 "reason": "fold lacks complete common-plane selected and baseline scores",
             })
             continue
-        baseline = "zero" if values["zero"] <= values["mean"] else "mean"
-        baseline_choices.append(baseline)
-        improvements.append(values[baseline] - values["selected"])
+        selected_losses.append(values["selected"])
+        for name, values_list in baseline_losses.items():
+            values_list.append(values[name])
         complete_folds.append(fold["outer_fold"])
 
-    improvement = fold_summary(improvements, 4)
     all_folds = len(complete_folds) == 4
+    better_baseline = None
+    improvements = np.full(4, np.nan)
+    if all_folds:
+        means = {name: float(np.mean(values))
+                 for name, values in baseline_losses.items()}
+        better_baseline = "zero" if means["zero"] <= means["mean"] else "mean"
+        improvements = (np.asarray(baseline_losses[better_baseline])
+                        - np.asarray(selected_losses))
+    improvement = fold_summary(improvements, 4)
     positive = bool(all_folds and improvement["mean"] > 0)
     exceeds_one_se = bool(
         all_folds
@@ -78,7 +87,7 @@ def predictive_conclusion(summary):
         "conclusion_key": key,
         "complete_common_plane_folds": complete_folds,
         "unavailable_folds": unavailable,
-        "better_baseline_by_fold": baseline_choices,
+        "better_baseline": better_baseline,
         "better_baseline_minus_selected": improvement,
         "criteria": {
             "four_complete_outer_folds": all_folds,
@@ -87,7 +96,7 @@ def predictive_conclusion(summary):
         },
         "rule": {
             "outer_folds": 4,
-            "baseline": "lower loss of zero-residual and learned-mean within each fold",
+            "baseline": "lower four-fold mean loss of zero-residual and learned-mean",
             "threshold": "positive mean fold improvement exceeding one physical-time-fold standard error",
             "feature_partitions_are_independent_realizations": False,
         },

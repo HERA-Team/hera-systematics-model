@@ -1,6 +1,7 @@
 import json
 
 import pytest
+
 from hera_systematics_model.artifacts import canonical_json
 from hera_systematics_model.cli import main
 from hera_systematics_model.conclusions import predictive_conclusion
@@ -34,7 +35,7 @@ def summary(selected=(5, 5, 5, 5), zero=(10, 10, 10, 10), mean=(9, 9, 9, 9)):
 def test_useful_structure_requires_better_baseline_and_one_fold_standard_error():
     report = predictive_conclusion(summary())
     assert report["conclusion_key"] == "useful"
-    assert report["better_baseline_by_fold"] == ["mean"] * 4
+    assert report["better_baseline"] == "mean"
     assert report["better_baseline_minus_selected"]["mean"] == 4
     assert all(report["criteria"].values())
     canonical_json(report)
@@ -64,6 +65,18 @@ def test_missing_common_plane_fold_reports_insufficient_evidence():
         "reason": "fold lacks complete common-plane selected and baseline scores",
     }]
     canonical_json(report)
+
+
+def test_better_baseline_is_selected_by_complete_fold_mean_without_oracle_switching():
+    evidence = summary(
+        selected=(5, 5, 5, 5),
+        zero=(1, 10, 10, 10),
+        mean=(9, 9, 9, 9),
+    )
+    report = predictive_conclusion(evidence)
+    assert report["better_baseline"] == "zero"
+    assert report["better_baseline_minus_selected"]["mean"] == 2.75
+    assert report["conclusion_key"] == "useful"
 
 
 def test_conclusion_rejects_changed_fold_identity_or_count():
