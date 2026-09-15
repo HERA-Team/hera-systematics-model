@@ -71,6 +71,16 @@ def fit_candidate(arrays, train, candidate, predictor, window_ids, cache=None):
     raise ValueError("unknown residual model method")
 
 
+def inferred_coefficient_rows(target, model, selected, valid_rows):
+    """Rows that have a target in this partition and a complete predictor core."""
+    if not model.rank:
+        return np.zeros(len(target), bool)
+    active = (target & model.feature_mask & selected).any(axis=1)
+    if model.metadata.get("method") == "kernel":
+        active = active & valid_rows[:, model.input_mask].all(axis=1)
+    return active
+
+
 def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, cache=None,
                         keep_models=False):
     """Predict targets from disjoint features with one fixed training partition."""
@@ -106,9 +116,9 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
             scores = np.zeros((len(test), model.rank))
             # Coefficients are needed only where this partition has a valid
             # target supported by modes. Other targets use the shared mean.
-            infer = np.flatnonzero((target & model.feature_mask & partition.target).any(axis=1))
-            if candidate["method"] == "kernel" and len(infer):
-                infer = infer[valid[test[infer]][:, model.input_mask].all(axis=1)]
+            infer = np.flatnonzero(
+                inferred_coefficient_rows(target, model, partition.target, valid[test])
+            )
             if len(infer):
                 predicted, inferred_scores = model.predict(*(a[test[infer]] for a in arrays),
                     predictor=partition.predictor, diagnostics=diagnostics)

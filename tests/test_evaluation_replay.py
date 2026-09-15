@@ -34,6 +34,23 @@ def test_replay_rejects_changed_numerical_evidence(field):
         replay_evaluation(arrays, np.arange(100), result)
 
 
+def test_replay_keeps_incomplete_kernel_predictor_rows_on_the_mean():
+    from hera_systematics_model.splits import time_folds
+
+    arrays = list(series())
+    outer = time_folds(np.arange(100), guard=3)[0]
+    arrays[3][outer.test[0], 0] = False
+    result = evaluate_nested(
+        arrays, np.arange(100), (1, 30),
+        [{"method": "kernel", "rank": 1, "representation": "linear", "bandwidth": 1., "alpha": 1.}],
+        guard=3,
+    )
+    assert result.metadata["complete"]
+    assert result.arrays["mean_only"][outer.test[0]].any()
+    report = replay_evaluation(arrays, np.arange(100), result)
+    assert report["passed"] and report["evaluation_complete"]
+
+
 def test_replay_preserves_region_exclusions_and_mean_only_predictions():
     arrays = series()
     mask = np.arange(30) > 6

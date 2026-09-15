@@ -4,6 +4,7 @@ import numpy as np
 
 from .evaluation_state import validate_evaluation
 from .models import measured_arrays
+from .prediction import inferred_coefficient_rows
 from .reconstruction import decode_scores
 from .scoring import score_predictions, training_mean
 
@@ -52,7 +53,7 @@ def replay_evaluation(arrays, window_ids, evaluation, training_filter=None, rtol
             selected = saved["feature_targets"][partition]
             predictor = saved["feature_predictors"][partition]
             scores = saved[prefix + "_scores"]
-            active = (target & model.feature_mask & selected).any(axis=1) if model.rank else np.zeros(len(test), bool)
+            active = inferred_coefficient_rows(target, model, selected, valid[test])
             if prefix + "_coefficients_inferred" in saved and not np.array_equal(active, saved[prefix + "_coefficients_inferred"]):
                 raise ValueError("replayed coefficient rows differ")
             values = np.broadcast_to(mean, target.shape).copy()
@@ -64,7 +65,10 @@ def replay_evaluation(arrays, window_ids, evaluation, training_filter=None, rtol
                 values[active] = decode_scores(model, scores[active], ideal[test[active]], pn[test[active]])
             coefficient_rows += int(active.sum())
             prediction[:, selected] = values[:, selected]
-            modeled[:, selected] = target[:, selected] & model.feature_mask[selected]
+            modeled[np.ix_(np.flatnonzero(active), np.flatnonzero(selected))] = (
+                model.feature_mask[selected]
+                & target[np.ix_(np.flatnonzero(active), np.flatnonzero(selected))]
+            )
             coverage[:, selected] += target[:, selected]
         if not np.array_equal(coverage, target.astype(int)) or not np.array_equal(modeled, saved["modeled"][test]):
             raise ValueError("replayed inference partitions or modeled coverage differ")
