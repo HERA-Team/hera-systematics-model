@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from hera_systematics_model.evaluation import evaluate_nested
 from hera_systematics_model.prediction import predict_partitioned
@@ -44,3 +45,47 @@ def test_empty_geometric_target_bands_do_not_create_failed_kernel_inference():
     assert len(result.models) == 3
     assert [entry["partition_index"] for entry in result.inference] == [2, 3, 4]
     assert result.target[:, 12:].all() and not result.target[:, :12].any()
+
+
+def test_incomplete_kernel_predictor_rows_use_mean_without_failing_the_candidate():
+    from hera_systematics_model.scoring import CandidateFailure
+    from test_models import low_rank_data
+
+    arrays = list(low_rank_data())
+    arrays[3][25, 0] = False
+    partitions = feature_partitions((1, 30))
+    candidate = {"method": "kernel", "representation": "linear", "rank": 2}
+    result = predict_partitioned(
+        arrays, np.arange(40), np.arange(25), np.arange(25, 40), partitions,
+        candidate, keep_models=True,
+    )
+    assert result.target[0].any()
+    assert result.mean_only[0].any()
+    assert not result.modeled[0].all()
+    assert result.modeled[1:].any()
+    mean = arrays[0][:25].mean(axis=0) - arrays[1][:25].mean(axis=0)
+    incomplete_targets = result.mean_only[0]
+    np.testing.assert_allclose(result.prediction[0, incomplete_targets], mean[incomplete_targets])
+    entry = next(
+        item for item in result.inference
+        if result.models[item["model_index"]].input_mask[0]
+    )
+    model = result.models[entry["model_index"]]
+    predictor = partitions[entry["partition_index"]].predictor
+    with pytest.raises(CandidateFailure, match="incomplete"):
+        model.predict(*(a[25:] for a in arrays), predictor)
+
+
+def test_nested_kernel_evaluation_completes_when_one_outer_predictor_cell_is_missing():
+    from hera_systematics_model.splits import time_folds
+
+    arrays = list(series())
+    outer = time_folds(np.arange(100), guard=3)[0]
+    arrays[3][outer.test[0], 0] = False
+    candidates = [
+        {"method": "kernel", "rank": 1, "representation": "linear", "bandwidth": 1., "alpha": 1.},
+    ]
+    result = evaluate_nested(arrays, np.arange(100), (1, 30), candidates, guard=3)
+    assert result.metadata["complete"]
+    assert all(fold["status"] == "evaluated" for fold in result.metadata["folds"])
+    assert result.arrays["mean_only"][outer.test[0]].any()

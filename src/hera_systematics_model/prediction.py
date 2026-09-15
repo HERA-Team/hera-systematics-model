@@ -107,6 +107,8 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
             # Coefficients are needed only where this partition has a valid
             # target supported by modes. Other targets use the shared mean.
             infer = np.flatnonzero((target & model.feature_mask & partition.target).any(axis=1))
+            if candidate["method"] == "kernel" and len(infer):
+                infer = infer[valid[test[infer]][:, model.input_mask].all(axis=1)]
             if len(infer):
                 predicted, inferred_scores = model.predict(*(a[test[infer]] for a in arrays),
                     predictor=partition.predictor, diagnostics=diagnostics)
@@ -114,7 +116,10 @@ def predict_partitioned(arrays, window_ids, train, test, partitions, candidate, 
                 if diagnostics is not None:
                     for entry in diagnostics:
                         entry["row"] = int(infer[entry["row"]])
-            modeled[:, partition.target] = model.feature_mask[partition.target] & target[:, partition.target]
+                modeled[np.ix_(infer, np.flatnonzero(partition.target))] = (
+                    model.feature_mask[partition.target]
+                    & target[np.ix_(infer, np.flatnonzero(partition.target))]
+                )
         if keep_models:
             support = np.zeros(target.shape, bool)
             ranks = np.zeros(len(test), int)
