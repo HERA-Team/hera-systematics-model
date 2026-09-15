@@ -28,6 +28,19 @@ def test_run_snapshots_dirty_consumed_content_and_never_replaces_it(tmp_path):
         define_task(run, task())
 
 
+def _frozen_run(root, name, payload, receipt="success"):
+    run = root / name
+    products = run / "products" / "baseline-1"
+    submissions = run / "submissions"
+    products.mkdir(parents=True)
+    submissions.mkdir(parents=True)
+    (run / "run.json").write_bytes(b"run")
+    (submissions / "baseline-1.json").write_bytes(b"task")
+    (products / "spectrum.bin").write_bytes(payload)
+    (products / f"{receipt}.json").write_bytes(receipt.encode())
+    return run
+
+
 def test_storage_includes_contingency_without_counting_shared_targets(tmp_path):
     external = tmp_path / "shared"
     external.write_bytes(b"1234567890")
@@ -39,6 +52,31 @@ def test_storage_includes_contingency_without_counting_shared_targets(tmp_path):
     assert require_storage(root, 10, cap_bytes=17)["projected_peak_bytes"] == 17
     with pytest.raises(ValueError):
         require_storage(root, 10, cap_bytes=16)
+
+
+def test_frozen_run_index_excludes_bookkeeping_and_rereads_after_receipt_change(tmp_path):
+    root = tmp_path / "runs"
+    root.mkdir()
+    run = _frozen_run(root, "aa" * 6 + "-" + "bb" * 8, b"x" * 50)
+    first = retained_bytes(root)
+    assert first == 50 + len(b"run") + len(b"task") + len(b"success")
+    assert (root / ".retained-index.json").is_file()
+    (run / "products" / "baseline-1" / "spectrum.bin").write_bytes(b"x" * 5000)
+    assert retained_bytes(root) == first
+    success = run / "products" / "baseline-1" / "success.json"
+    success.write_bytes(b"success!")
+    assert retained_bytes(root) == 5000 + len(b"run") + len(b"task") + len(b"success!")
+
+
+def test_in_progress_run_bytes_are_counted_before_a_receipt_exists(tmp_path):
+    root = tmp_path / "runs"
+    run = _frozen_run(root, "in-progress-run", b"x" * 20)
+    started = run / "products" / "baseline-1" / "started.json"
+    started.write_bytes(b"start")
+    (run / "products" / "baseline-1" / "success.json").unlink()
+    first = retained_bytes(root)
+    (run / "products" / "baseline-1" / "spectrum.bin").write_bytes(b"x" * 80)
+    assert retained_bytes(root) == first + 60
 
 
 @pytest.mark.parametrize("kwargs", [{"cpus": 17}, {"memory_mib": 131073}, {"hours": 25}])

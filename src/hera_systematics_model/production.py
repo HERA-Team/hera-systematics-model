@@ -1,13 +1,19 @@
 """Immutable run definitions, retained-storage checks and input snapshots."""
 
 from dataclasses import asdict, dataclass
+import fcntl
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 
 from .artifacts import canonical_json, sha256_file
 from .configuration import digest_json, file_identity
+
+_INDEX = ".retained-index.json"
+_LOCK = ".retained-index.lock"
+_BOOKKEEPING = {_INDEX, _LOCK, _INDEX + ".tmp"}
 
 
 @dataclass(frozen=True)
@@ -23,12 +29,120 @@ class Resources:
             raise ValueError("task exceeds CPU, memory or wall-time bounds")
 
 
+def _bookkeeping(path):
+    return Path(path).name in _BOOKKEEPING
+
+
+def _directory_bytes(path):
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+        base = Path(dirpath)
+        dirnames[:] = [name for name in dirnames if not (base / name).is_symlink()]
+        for name in filenames:
+            file_path = base / name
+            if _bookkeeping(file_path) or file_path.is_symlink() or not file_path.is_file():
+                continue
+            total += file_path.stat().st_size
+    return total
+
+
+def _frozen_signature(path):
+    """Identify run directories whose products cannot grow until a receipt changes."""
+    submissions = Path(path) / "submissions"
+    if not submissions.is_dir():
+        return None
+    products = Path(path) / "products"
+    tasks = []
+    found = False
+    try:
+        markers = sorted(submissions.iterdir())
+    except FileNotFoundError:
+        return None
+    for marker in markers:
+        name = marker.name
+        if not name.endswith(".json") or name.endswith(".dispatch.json"):
+            continue
+        found = True
+        task = name[:-5]
+        success = products / task / "success.json"
+        failure = products / task / "failure.json"
+        started = products / task / "started.json"
+        if started.is_file() and not success.is_file() and not failure.is_file():
+            return None
+        receipt = success if success.is_file() else failure if failure.is_file() else marker
+        state = "success" if success.is_file() else "failure" if failure.is_file() else "queued"
+        st = receipt.stat()
+        tasks.append([task, state, st.st_mtime_ns, st.st_size])
+    run_json = Path(path) / "run.json"
+    if not found or not run_json.is_file():
+        return None
+    st = run_json.stat()
+    return [st.st_mtime_ns, st.st_size, tasks]
+
+
+def _read_index(root):
+    path = Path(root) / _INDEX
+    try:
+        payload = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"schema_version": 1, "entries": {}}
+    entries = payload.get("entries")
+    if payload.get("schema_version") != 1 or not isinstance(entries, dict):
+        return {"schema_version": 1, "entries": {}}
+    return payload
+
+
+def _write_index(root, payload):
+    root = Path(root)
+    path = root / _INDEX
+    tmp = root / (_INDEX + ".tmp")
+    with (root / _LOCK).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        tmp.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+        os.replace(tmp, path)
+
+
 def retained_bytes(root):
     """Count new logical file bytes without following links to shared inputs."""
+    root = Path(root)
+    index = _read_index(root)
+    entries = dict(index.get("entries", {}))
     total = 0
-    for path in Path(root).rglob("*"):
-        if path.is_file() and not path.is_symlink():
-            total += path.stat().st_size
+    seen = set()
+    dirty = False
+    try:
+        children = list(root.iterdir())
+    except FileNotFoundError:
+        return 0
+    for child in children:
+        if child.is_symlink() or _bookkeeping(child):
+            continue
+        if child.is_file():
+            total += child.stat().st_size
+            continue
+        if not child.is_dir():
+            continue
+        seen.add(child.name)
+        signature = _frozen_signature(child)
+        cached = entries.get(child.name)
+        if signature is not None and cached and cached.get("signature") == signature:
+            total += cached["bytes"]
+            continue
+        nbytes = _directory_bytes(child)
+        total += nbytes
+        if signature is not None:
+            entries[child.name] = {"signature": signature, "bytes": nbytes}
+            dirty = True
+        elif child.name in entries:
+            del entries[child.name]
+            dirty = True
+    stale = [name for name in entries if name not in seen]
+    if stale:
+        for name in stale:
+            del entries[name]
+        dirty = True
+    if dirty:
+        _write_index(root, {"schema_version": 1, "entries": entries})
     return total
 
 
