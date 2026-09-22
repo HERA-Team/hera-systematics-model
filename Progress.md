@@ -112,3 +112,10 @@
 - Recorded the NRAO filing path for leftover-v15 quota relief: https://help.nrao.edu, department Data archive and Download. HERA `admin/quota.txt` is a user-quota cron source and is not project 245009. The leftover-v15 80 MiB probe still failed at 8,388,608 bytes. Leftover-v15 was not launched. Compact evidence is `normalization-recovered-v15-quota-relief-helpdesk-path.json`.
 - Sent the project 245009 quota-relief request from `kmandar@herapost-master.aoc.nrao.edu` to `helpdesk-cv@nrao.edu`. Relay `revere-vml.aoc.nrao.edu` accepted the message as `68H7KLij2986297`. The leftover-v15 80 MiB probe still failed. Leftover-v15 was not launched. Compact evidence is `normalization-recovered-v15-quota-relief-computing-helpdesk-email.json`.
 - Sent the same quota-relief request to `tschnedl@nrao.edu` with CC `helpdesk-cv@nrao.edu`. Relay `revere-vml.aoc.nrao.edu` accepted the message as `68H7QJdq2986720`. The leftover-v15 80 MiB probe still failed. Leftover-v15 was not launched. Compact evidence is `normalization-recovered-v15-quota-relief-nm-lustre-admin-email.json`.
+
+# 22nd September 2026
+
+## Completed
+
+- Added allocation-bound independent batch verification for explicit immutable task catalogs, including scheduler steps, producing-job identities, input/output hashes, numerical structures, and manifest members.
+- Added regression coverage for changed inputs and outputs, failed scheduler steps, mismatched job identities, failing verification, duplicate identities, and escaped task paths.

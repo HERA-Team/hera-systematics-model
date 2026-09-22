@@ -336,3 +336,14 @@ and attributes are compared against the original in bounded slices. The
 `.aliases.json` receipt records every added pair, orientation, geometry and input
 and output hash. Partial outputs remain on failure without a success receipt.
 Run this operation through Slurm and reserve space for the retained full copy.
+
+`python -m hera_systematics_model.task_acceptance CATALOG OUTPUT` independently
+verifies a nonempty explicit task batch inside a Slurm allocation. The catalog
+has `schema_version: 1` and a `tasks` list, with absolute `run`, `task`, and
+string `job_id` fields. Each task and job must occur once. The verifier checks
+scheduler root and step exits, submission and producer identities, task/run
+digests, consumed input hashes, every declared output, manifest members, and
+numerical structures. Each task must also bind a passing `verification.json`
+in its success receipt. It writes the batch result exclusively after every
+entry passes, preserving all producer files. This check verifies retained
+products; scientific interpretation and figure inspection remain separate.
