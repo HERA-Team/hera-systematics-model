@@ -347,3 +347,14 @@ numerical structures. Each task must also bind a passing `verification.json`
 in its success receipt. It writes the batch result exclusively after every
 entry passes, preserving all producer files. This check verifies retained
 products; scientific interpretation and figure inspection remain separate.
+
+`python -m hera_systematics_model.evidence_batch CATALOG OUTPUT` uses the same
+explicit catalog schema and Slurm requirement to export numerical evidence
+from retained `evaluation.npz` and `descriptive.npz` pairs. It independently
+verifies each producing task before loading its artifacts, then exports
+selected, zero-residual and training-mean losses on the same target cells,
+equal physical-time-fold summaries, paired improvements, coverage and separate
+descriptive choices. It does not refit models or repeat selection. Incomplete
+evaluations, changed artifacts and existing output paths are rejected. The
+output binds producer acceptance and artifact hashes; it does not assign a
+scientific conclusion or establish independent-realization performance.

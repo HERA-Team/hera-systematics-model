@@ -119,3 +119,5 @@
 
 - Added allocation-bound independent batch verification for explicit immutable task catalogs, including scheduler steps, producing-job identities, input/output hashes, numerical structures, and manifest members.
 - Added regression coverage for changed inputs and outputs, failed scheduler steps, mismatched job identities, failing verification, duplicate identities, and escaped task paths.
+- Added allocation-bound export of matched selected/zero/mean baseline evidence from independently verified retained evaluation pairs, with artifact identities and separate descriptive choices.
+- Verified rejection of failed producer acceptance, incomplete evaluations, changed artifacts and existing outputs, while retaining defined zero-baseline differences.
