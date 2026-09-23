@@ -86,6 +86,51 @@ def test_dependencies_allow_only_nonoverlapping_predecessors_and_keep_storage_re
     assert fourth["afterok"] == ["102"]
 
 
+def test_single_node_constraint_is_recorded_and_cannot_change_on_retry(tmp_path, monkeypatch):
+    run = create_run(tmp_path / "runs", "a" * 40, {}, [])
+    define_task(run, task())
+    calls = []
+    monkeypatch.setattr(scheduler.subprocess, "check_output", lambda *a, **k: "")
+
+    def dispatch(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout="12345\n", stderr="")
+
+    monkeypatch.setattr(scheduler.subprocess, "run", dispatch)
+    record = submit_task(run, "baseline-1", "/usr/bin/python3", tmp_path, node="compute-01")
+    assert record["node"] == "compute-01"
+    assert "--nodelist=compute-01" in record["command"]
+    assert "--nodes=1" in record["command"]
+    assert submit_task(run, "baseline-1", "/usr/bin/python3", tmp_path, node="compute-01") == record
+    for node in (None, "compute-02"):
+        with pytest.raises(ValueError, match="node changed"):
+            submit_task(run, "baseline-1", "/usr/bin/python3", tmp_path, node=node)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("node", ["", "a,b", "a[1-2]", "a b", "--nodes=2", "a\nb", 2])
+def test_node_constraint_rejects_lists_ranges_and_options_before_reservation(tmp_path, node):
+    run = create_run(tmp_path / "runs", "a" * 40, {}, [])
+    define_task(run, task())
+    with pytest.raises(ValueError, match="one explicit scheduler host"):
+        submit_task(run, "baseline-1", "/usr/bin/python3", tmp_path, node=node)
+    assert not (run / "submissions").exists()
+
+
+def test_node_constraint_does_not_bypass_aggregate_limits(tmp_path, monkeypatch):
+    run = create_run(tmp_path / "runs", "a" * 40, {}, [])
+    define_task(run, task())
+    monkeypatch.setattr(scheduler.subprocess, "check_output", lambda *a, **k: "")
+
+    def reject_resources(*args):
+        raise ValueError("aggregate limit")
+
+    monkeypatch.setattr(scheduler, "require_dependency_resources", reject_resources)
+    with pytest.raises(ValueError, match="aggregate limit"):
+        submit_task(run, "baseline-1", "/usr/bin/python3", tmp_path, node="compute-01")
+    assert not (run / "submissions/baseline-1.json").exists()
+
+
 def test_serial_jobs_cannot_be_counted_as_concurrent_but_independent_jobs_can(tmp_path):
     active = [{"job_id": str(i), "cpus": 2, "memory_mib": 32768} for i in (1, 2)]
     request = {"cpus": 2, "memory_mib": 65536, "hours": 2}

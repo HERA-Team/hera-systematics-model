@@ -71,9 +71,11 @@ def require_dependency_resources(active, requested, dependencies, predecessors):
     return possible
 
 
-def submit_task(run, name, python, package_source, partition="hera", afterok=()):
+def submit_task(run, name, python, package_source, partition="hera", afterok=(), node=None):
     """Reserve one task under a workflow-wide lock; never submit it twice."""
     run = Path(run).resolve()
+    if node is not None and (not isinstance(node, str) or not re.match(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z", node)):
+        raise ValueError("node must identify one explicit scheduler host")
     task = load_task(run, name)
     dependencies = sorted(set(map(str, afterok)))
     if len(dependencies) != len(afterok) or any(not value.isdigit() for value in dependencies):
@@ -91,6 +93,8 @@ def submit_task(run, name, python, package_source, partition="hera", afterok=())
                 raise ValueError("submission identity changed")
             if existing.get("afterok", []) != dependencies:
                 raise ValueError("submission dependencies changed")
+            if existing.get("node") != node:
+                raise ValueError("submission node changed")
             if "job_id" in existing:
                 return existing
             raise ValueError("submission outcome requires reconciliation")
@@ -127,10 +131,14 @@ def submit_task(run, name, python, package_source, partition="hera", afterok=())
             f"--output={submissions / (name + '.slurm.log')}", f"--chdir={run}", "--wrap", shlex.join(worker)]
         if dependencies:
             command.insert(1, "--dependency=afterok:" + ":".join(dependencies))
+        if node is not None:
+            command.insert(1, "--nodelist=" + node)
         record = {"command": command, "projected_bytes": task["projected_bytes"],
                   "task_digest": digest_json(task), "run_digest": state["identity_digest"],
                   "resources": resources, "active_at_submission": active, "storage": storage,
                   "afterok": dependencies, "potentially_simultaneous": simultaneous}
+        if node is not None:
+            record["node"] = node
         # A reservation written before dispatch makes an uncertain reply non-retryable.
         write_json_exclusive(marker, record)
         process = subprocess.run(command, capture_output=True, text=True, check=False)

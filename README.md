@@ -71,6 +71,11 @@ Slurm permits them to start only after every predecessor succeeds. Recorded
 predecessor relationships bound every possible CPU, memory and two-job overlap;
 independent queued jobs are conservatively treated as simultaneous. Storage
 reservations include every queued task, including predecessors.
+The Python `scheduler.submit_task(..., node="compute-01")` interface can bind
+one explicit host for comparisons that depend on the execution environment.
+It records `--nodelist` and the host in the submission receipt; retries cannot
+add, remove or change that constraint. Host lists and ranges are rejected.
+The same dependency, aggregate-resource and retained-storage checks still apply.
 
 Spectral conversion requires native-sample membership exported during the
 actual averaging operation. Matching row counts or rounded centroids is
